@@ -3,7 +3,7 @@
     node loads/injections.
 =#
 
-function LDF.build_ldf!(m::JuMP.AbstractModel, p::LDF.Inputs, ps::Vector{Int},
+function LDF.build_ldf!(m::JuMP.AbstractModel, p::LDF.Inputs, ps::AbstractVector,
     exportvarrefs::JuMP.Containers.DenseAxisArray, 
     importvarrefs::JuMP.Containers.DenseAxisArray
     )
@@ -15,10 +15,16 @@ function LDF.build_ldf!(m::JuMP.AbstractModel, p::LDF.Inputs, ps::Vector{Int},
     LDF.constrain_loads(m, p, ps, exportvarrefs, importvarrefs)
 
 end
-# TODO confirm all equality constraints in LDF (or make equality with slack and method extensions)
 
 
-function LDF.constrain_loads(m::JuMP.AbstractModel, p::LDF.Inputs, ps::Vector{Int}, 
+"""
+    constrain_loads(m, p::Inputs)
+
+- set loads to negative of Inputs.Pload, which are normalized by Sbase when creating Inputs
+- keys of Pload must match Inputs.busses. Any missing keys have load set to zero.
+- Inputs.substation_bus is unconstrained, slack bus
+"""
+function LDF.constrain_loads(m::JuMP.AbstractModel, p::LDF.Inputs, ps::AbstractVector, 
     exportvarrefs::JuMP.Containers.DenseAxisArray, 
     importvarrefs::JuMP.Containers.DenseAxisArray,
     )
@@ -29,38 +35,54 @@ function LDF.constrain_loads(m::JuMP.AbstractModel, p::LDF.Inputs, ps::Vector{In
 
     for j in p.busses
         if j in keys(p.Pload)
-            if parse(Int, j) in ps
-                @constraint(m, [t in 1:p.Ntimesteps],
-                    Pⱼ[j,t] == 1e3/p.Sbase * (  # 1e3 b/c REopt values in kW
-                        exportvarrefs[parse(Int, j), t]
-                        - importvarrefs[parse(Int, j), t]
+            if j in ps
+                if j in exportvarrefs.axes[1]
+                    @constraint(m, [t in 1:p.Ntimesteps],
+                        Pⱼ[j,t] == 1e3/p.Sbase * (  # 1e3 b/c REopt values in kW
+                            exportvarrefs[j, t]
+                            - importvarrefs[j, t]
+                        )
                     )
-                )
+                else
+                    @constraint(m, [t in 1:p.Ntimesteps],
+                        Pⱼ[j,t] == 1e3/p.Sbase * (  # 1e3 b/c REopt values in kW
+                            - importvarrefs[j, t]
+                        )
+                    )
+                end
             else
                 @constraint(m, [t in 1:p.Ntimesteps],
                     Pⱼ[j,t] == -p.Pload[j][t]
                 )
             end
-        elseif j != p.substation_bus
+        elseif j != p.substation_bus # TODO add BESS decisions here
             @constraint(m, [t in 1:p.Ntimesteps],
                 Pⱼ[j,t] == 0
             )
         end
         
         if j in keys(p.Qload)
-            if parse(Int, j) in ps
-                @constraint(m, [t in 1:p.Ntimesteps],
-                    Qⱼ[j,t] == 1e3/p.Sbase * p.pf * (  # 1e3 b/c REopt values in kW
-                        exportvarrefs[parse(Int, j), t]
-                        - importvarrefs[parse(Int, j), t]
+            if j in ps
+                if j in exportvarrefs.axes[1]
+                    @constraint(m, [t in 1:p.Ntimesteps],
+                        Qⱼ[j,t] == 1e3/p.Sbase * p.pf * (  # 1e3 b/c REopt values in kW
+                            exportvarrefs[j, t]
+                            - importvarrefs[j, t]
+                        )
                     )
-                )
+                else
+                    @constraint(m, [t in 1:p.Ntimesteps],
+                        Qⱼ[j,t] == 1e3/p.Sbase * p.pf * (  # 1e3 b/c REopt values in kW
+                            - importvarrefs[j, t]
+                        )
+                    )
+                end
             else
                 @constraint(m, [t in 1:p.Ntimesteps],
                     Qⱼ[j,t] == -p.Qload[j][t]
                 )
             end
-        elseif j != p.substation_bus
+        elseif j != p.substation_bus  # TODO add BESS decisions here
             @constraint(m, [t in 1:p.Ntimesteps],
                 Qⱼ[j,t] == 0
             )
