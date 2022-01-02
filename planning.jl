@@ -57,7 +57,7 @@ LLnodes_withPV = ["34"]
 LLnodes_warehouse = ["33"]
 
 
-ci = repeat([0.1], T)
+ci = repeat([0.25], T)
 pwf = REoptLite.annuity(years, 0.0, discountrate)
 clmp = vec(readdlm("./data/cleaned_ercot2019_RTprices.csv", ',', Float64, '\n'));
 clmp = abs.(clmp) / 1e3;  # problem is unbounded with negative prices, convert from $/MWh to $/kWh
@@ -79,72 +79,86 @@ profile_names = ["FastFoodRest", "FullServiceRest", "Hospital", "LargeHotel", "L
 =#
 # knownloads_nodestrings = setdiff(loadnodestrings, LLnodes)
 rand_names = rand(profile_names, length(loadnodes))
-
+doe_profiles = Any[]
 for (i, node) in enumerate(loadnodes)
-    doe_profile = REoptLite.BuiltInElectricLoad("", rand_names[i], lat, lon, 2017)
-    LDFinputs.Pload[node] = doe_profile[1:T]
-    LDFinputs.Qload[node] = doe_profile[1:T] * 0.1
+    push!(doe_profiles, REoptLite.BuiltInElectricLoad("", rand_names[i], lat, lon, 2017))
 end
 
-# check power flow feasibility w/o DER
-model = Model(Gurobi.Optimizer)
-LDF.build_ldf!(model, LDFinputs)
-optimize!(model)
+# # check power flow feasibility w/o DER
+# model = Model(Gurobi.Optimizer)
+# LDF.build_ldf!(model, LDFinputs)
+# optimize!(model)
 
-minimum(sqrt.(value.(model[:vsqrd])))
+# minimum(sqrt.(value.(model[:vsqrd])))
 
-# pepper some pv into the system
-pvpf_complement = map(x -> x ≈ 0.0 ? M : 0.0, pvpf)
-PVkW = 1e3   # TODO more baseline PV ?
-LDFinputs.Pload["3"] .-= PVkW * pvpf[1:T]
-LDFinputs.Qload["3"] .-= PVkW * pvpf[1:T] * 0.1
-LDFinputs.Pload["30"] .-= PVkW * pvpf[1:T]
-LDFinputs.Qload["30"] .-= PVkW * pvpf[1:T] * 0.1
-LDFinputs.Pload["18"] .-= PVkW * pvpf[1:T]
-LDFinputs.Qload["18"] .-= PVkW * pvpf[1:T] * 0.1
-
-# check power flow feasibility w/baseline PV
-model = Model(Gurobi.Optimizer)
-LDF.build_ldf!(model, LDFinputs)
-optimize!(model)
-
-maximum(sqrt.(value.(model[:vsqrd])))
+pvpf_complement = map(x -> x ≈ 0.0 ? M*M : 0.0, pvpf)
+timesteps_pv_complement = Int[]
+for (i,pf) in enumerate(pvpf)
+    if pf <= 0
+        push!(timesteps_pv_complement, i)
+    end
+end
 
 
+# # check power flow feasibility w/baseline PV
+# model = Model(Gurobi.Optimizer)
+# LDF.build_ldf!(model, LDFinputs)
+# optimize!(model)
 
-# instantiate optimizer and empty model
+# maximum(sqrt.(value.(model[:vsqrd])))
+
+
+
 optimizer = Gurobi.Optimizer()
 model = BilevelModel(()->optimizer, linearize_bilinear_upper_terms=true)
+T = 8760
+LDFinputs.Ntimesteps =T
+cpv = 1500
+ci = repeat([15], T);
+timesteps_pv = timesteps_pv_complement[findall(t -> t <= T, timesteps_pv_complement)];
 
+for (i, node) in enumerate(loadnodes)
+    LDFinputs.Pload[node] = doe_profiles[i];
+    LDFinputs.Qload[node] = doe_profiles[i] * 0.1;
+end
+# pepper some pv into the system
+PVkW = 2e3   # TODO more baseline PV ?
+LDFinputs.Pload["3"] .-= PVkW * pvpf[1:T];
+LDFinputs.Qload["3"] .-= PVkW * pvpf[1:T] * 0.1;
+LDFinputs.Pload["30"] .-= PVkW * pvpf[1:T];
+LDFinputs.Qload["30"] .-= PVkW * pvpf[1:T] * 0.1;
+LDFinputs.Pload["28"] .-= PVkW * pvpf[1:T];
+LDFinputs.Qload["28"] .-= PVkW * pvpf[1:T] * 0.1;
+LDFinputs.Pload["27"] .-= PVkW * pvpf[1:T];
+LDFinputs.Qload["27"] .-= PVkW * pvpf[1:T] * 0.1;
+LDFinputs.Pload["18"] .-= PVkW * pvpf[1:T];
+LDFinputs.Qload["18"] .-= PVkW * pvpf[1:T] * 0.1;
 #= 
         LOWER MODEL VARIABLES
 =#
 # TODO add more node indices to LL
-@variable(Lower(model), 0 <= ye[LLnodes_withPV, 1:T] <= M) # TODO? start values from REopt
-@variable(Lower(model), 0 <= yi[LLnodes, 1:T] <= M)
-@variable(Lower(model), 0 <= ypv[LLnodes_withPV] <= M)
-@variable(Lower(model), 0 <= ypvprod[LLnodes_withPV, 1:T] <= M)
-@variable(Lower(model), 0 <= spvprod[LLnodes_withPV, 1:T] <= M) 
-@variable(Lower(model), 0 <= dummyslack[LLnodes_withPV, 1:T] <= M) 
-@variable(Lower(model), -10 <= dvTemperature[LLnodes_warehouse, 1:T] <= 0.0)
-@variable(Lower(model), 0 <= dvThermalProduction[LLnodes_warehouse, 1:T] <= M)
-
+@variable(Lower(model), 0 <= ye[LLnodes_withPV, 1:T] <= M); # TODO? start values from REopt
+@variable(Lower(model), 0 <= yi[LLnodes, 1:T] <= M);
+@variable(Lower(model), 0 <= ypv[LLnodes_withPV] <= M);
+@variable(Lower(model), 0 <= ypvprod[LLnodes_withPV, 1:T] <= M);
+@variable(Lower(model), 0 <= spvprod[LLnodes_withPV, 1:T] <= M);
+@variable(Lower(model), 0 <= dummyslack[LLnodes_withPV, 1:T] <= M);
+@variable(Lower(model), -10 <= dvTemperature[LLnodes_warehouse, 1:T] <= 0.0);
+@variable(Lower(model), 0 <= dvThermalProduction[LLnodes_warehouse, 1:T] <= M);
 # LL load balances
 @constraint(Lower(model), loadbalance_withPV[n in LLnodes_withPV, t in 1:T],
     yi[n, t] + ypvprod[n, t] == LDFinputs.Pload[n][t] + ye[n, t]
-)
+);
 @constraint(Lower(model), loadbalance_warehouse[n in LLnodes_warehouse, t in 1:T],
     yi[n, t] == LDFinputs.Pload[n][t] + dvThermalProduction[n, t] / CHILLER_COP
-)
-
+);
 # PV production
 @constraint(Lower(model), pvprod[n in LLnodes_withPV, t in 1:T],
-    ypvprod[n, t] + spvprod[n, t] == ypv[n] * pvpf[t]
-)
-@constraint(Lower(model), [n in LLnodes_withPV, t in 1:T],
-    ypvprod[n, t] + dummyslack[n, t] == ypv[n] * pvpf_complement[t]
-)
-
+    ypvprod[n, t] + spvprod[n, t] == ypv[n] * pvpf[t]  # need curtailment to make UL pay for ye ?
+);
+# @constraint(Lower(model), [n in LLnodes_withPV, t in timesteps_pv],
+#     ypvprod[n, t] + dummyslack[n, t] == ypv[n] * pvpf_complement[t]
+# )
 #=
         LL REFRIGERATED WAREHOUSE MODEL
 =#
@@ -158,54 +172,52 @@ J = size(B,2)
 @constraint(Lower(model), sstemperature[n in LLnodes_warehouse, t in 2:T],
     dvTemperature[n, t] == dvTemperature[n, t-1] + A[1, 1] * dvTemperature[n, t-1] + 
     sum(B[1, j] * u[j, t-1] for j=1:J) + B[1, 1] * (-dvThermalProduction[n, t-1])
-)
-@constraint(Lower(model), init_temperature[n in LLnodes_warehouse], dvTemperature[n, 1] == -1.0)  # initial temperature
+);
+@constraint(Lower(model), init_temperature[n in LLnodes_warehouse], dvTemperature[n, 1] == -1.0);  # initial temperature
 
 #= 
         UPPER MODEL VARIABLES
 =#
 # duals of LL load balances
-@variable(Upper(model), 0 <= lambdaPV <= M, DualOf(loadbalance_withPV))
+@variable(Upper(model), 0 <= lambdaPV <= M, DualOf(loadbalance_withPV));
 # @variable(Upper(model), 0 <= lambda_warehouse <= M, DualOf(loadbalance_warehouse))
 
 # UL variables in LL objective
-@variable(Upper(model), 0 <= xe[LLnodes_withPV, 1:T] <= M)  # PV export compensation
-@variable(Upper(model), 0 <= xi[LLnodes, 1:T] <= M)  # time varying tariff for Warehouses
+@variable(Upper(model), 0 <= xe[LLnodes_withPV, 1:T] <= M);  # PV export compensation
+# @variable(Upper(model), 0 <= xi[LLnodes, 1:T] <= M)  # time varying tariff for Warehouses
 
-@variable(Upper(model), 0 <= x0[1:T] <= M)  # positive power import at feeder head
+@variable(Upper(model), 0 <= x0[1:T] <= M);  # positive power import at feeder head
 
 # TODO which nodes can have BESS? Assume the unloaded nodes
-LDF.build_ldf!(Upper(model), LDFinputs, LLnodes, ye, yi)
-@constraint(Upper(model), [t in 1:T], x0[t] >= model[:Pⱼ]["0", t] )
+LDF.build_ldf!(Upper(model), LDFinputs, LLnodes, ye, yi);
+@constraint(Upper(model), [t in 1:T], x0[t] >= model[:Pⱼ]["0", t] );
 
 # yi ⟂ ye
-for (i, e) in zip(yi, ye)
+for nd in LLnodes_withPV, (i, e) in zip(yi[nd, :], ye[nd, :])
     @constraint(Upper(model),
         [i, e] in MOI.SOS1([1.0, 2.0])
-    )
+    );
 end
-
 #= 
         LL objective
 =#
 @objective(Lower(model), Min,
     pwf * sum(ci[t] * yi[n, t] for n in LLnodes, t in 1:T) + 
     pwf * sum( -xe[n, t] * ye[n, t] for n in LLnodes_withPV, t in 1:T) +
-    pwf * sum(  xi[n, t] * yi[n, t] for n in LLnodes_warehouse, t in 1:T) +
+    # pwf * sum(  xi[n, t] * yi[n, t] for n in LLnodes_warehouse, t in 1:T) +
     sum(cpv * ypv[n] for n in LLnodes_withPV)
-)
-
+);
 #= 
         UL objective
 =#
-
 # TODO voltage cost? wires alternative? 
 # TODO UL BESS cost (w/o it pwf has no effect)
 @objective(Upper(model), Min,
     pwf * sum( clmp[t] * x0[t] for t in 1:T) +
     pwf * sum( ye[n, t] * lambdaPV[n, t] for n in LLnodes_withPV, t in 1:T) 
     # pwf * sum( yi[n, t] * lambda_warehouse[n, t] for n in LLnodes_warehouse, t in 1:T)
-)
+    # UL should not benefit from charging LL w/o some cost
+);
 
 optimize!(model)
 
@@ -219,12 +231,117 @@ with yi for flexHVAC and ye for PV the model violates condition 5 (p = A_jn/V_jn
     dealt with this in BilevelJuMP
 
 Try yi only s.t. UL can use thermal storage to absorb excess PV?
+
+Need scenario with PV desirable to lower total cost of power sometimes and other time PV export is undesirable due to voltage rise.
+xe will encourage export when desired. When it is not desired UL will use BESS to absorb it (w/o compensation?)
 =#
 value.(model[:ypv])
-maximum(sqrt.(value.(model[:ye])))
+maximum(sqrt.(value.(model[:vsqrd])))
 
 
 maximum(sqrt.(value.(model[:xi])))
+
+
+
+
+# # epigraph for norm1 of voltage excursion
+# @constraint(Upper(model), [t in 1:T],
+#     epi[t] >= v1[t] - 1.0
+# )
+# @constraint(Upper(model), [t in 1:T],
+#     -epi[t] <= v1[t] - 1.0
+# )
+# @constraint(Upper(model), [t in T+1:2T],
+#     epi[t] >= v2[t-T] - 1.0
+# )
+# @constraint(Upper(model), [t in T+1:2T],
+#     -epi[t] <= v2[t-T] - 1.0
+# )
+# @constraint(Upper(model), [t in 1:2T],
+#     max_epi >= epi[t]
+# )
+# instantiate optimizer and empty model
+optimizer = Gurobi.Optimizer()
+model = BilevelModel(()->optimizer, linearize_bilinear_upper_terms=true)
+
+#= 
+        LOWER MODEL VARIABLES
+=#
+# TODO add more node indices to LL
+@variable(Lower(model), 0 <= ye[LLnodes, 1:T] <= M) # TODO? start values from REopt
+@variable(Lower(model), 0 <= yi[LLnodes, 1:T] <= M)
+@variable(Lower(model), 0 <= ypv[LLnodes] <= M)
+@variable(Lower(model), 0 <= ypvprod[LLnodes, 1:T] <= M)
+@variable(Lower(model), 0 <= spvprod[LLnodes, 1:T] <= M) 
+@variable(Lower(model), 0 <= dummyslack[LLnodes, 1:T] <= M) 
+@variable(Lower(model), -10 <= dvTemperature[LLnodes, 1:T] <= 0.0)
+@variable(Lower(model), 0 <= dvThermalProduction[LLnodes, 1:T] <= M)
+# LL load balances
+@constraint(Lower(model), loadbalance[n in LLnodes, t in 1:T],
+    yi[n, t] + ypv[n] * pvpf[t] == LDFinputs.Pload[n][t] + dvThermalProduction[n, t] / CHILLER_COP + ye[n, t]
+)
+#=
+        LL REFRIGERATED WAREHOUSE MODEL
+=#
+R = 0.00025  # K/kW
+C = 1e5   # kJ/K
+A = reshape([-1/(R*C)], 1,1)
+B = [1/(R*C) 1/C]
+u = [tamb zeros(8760)]';  # could replace the zeros vector with endogenous heat input
+J = size(B,2)
+# state space temperature evolution
+@constraint(Lower(model), sstemperature[n in LLnodes, t in 2:T],
+    dvTemperature[n, t] == dvTemperature[n, t-1] + A[1, 1] * dvTemperature[n, t-1] + 
+    sum(B[1, j] * u[j, t-1] for j=1:J) + B[1, 1] * (-dvThermalProduction[n, t-1])
+)
+@constraint(Lower(model), init_temperature[n in LLnodes], dvTemperature[n, 1] == -1.0)  # initial temperature
+
+#= 
+        UPPER MODEL VARIABLES
+=#
+# duals of LL load balances
+@variable(Upper(model), 0 <= lambda <= M, DualOf(loadbalance))
+
+# UL variables in LL objective
+@variable(Upper(model), 0 <= xe[LLnodes, 1:T] <= M)  # PV export compensation
+
+@variable(Upper(model), 0 <= x0[1:T] <= M)  # positive power import at feeder head
+
+# TODO which nodes can have BESS? Assume the unloaded nodes
+LDF.build_ldf!(Upper(model), LDFinputs, LLnodes, ye, yi)
+@constraint(Upper(model), [t in 1:T], x0[t] >= model[:Pⱼ]["0", t] )
+
+# yi ⟂ ye
+for nd in LLnodes, (i, e) in zip(yi[nd, :], ye[nd, :])
+    @constraint(Upper(model),
+        [i, e] in MOI.SOS1([1.0, 2.0])
+    )
+end
+#= 
+        LL objective
+=#
+@objective(Lower(model), Min,
+    pwf * sum(ci[t] * yi[n, t] for n in LLnodes, t in 1:T) + 
+    pwf * sum( -xe[n, t] * ye[n, t] for n in LLnodes, t in 1:T) +
+    sum(cpv * ypv[n] for n in LLnodes)
+)
+#= 
+        UL objective
+=#
+# TODO voltage cost? wires alternative? 
+# TODO UL BESS cost (w/o it pwf has no effect)
+@objective(Upper(model), Min,
+    pwf * sum( clmp[t] * x0[t] for t in 1:T) +
+    pwf * sum( ye[n, t] * lambda[n, t] for n in LLnodes, t in 1:T)
+)
+
+optimize!(model)
+
+
+
+
+
+
 
 
 # this model works w/o node index: (so try adding node index)
