@@ -38,16 +38,11 @@ function LDF.constrain_loads(m::JuMP.AbstractModel, p::LDF.Inputs, ps::AbstractV
             if j in ps
                 if j in exportvarrefs.axes[1]
                     @constraint(m, [t in 1:p.Ntimesteps],
-                        Pⱼ[j,t] == 1e3/p.Sbase * (  # 1e3 b/c REopt values in kW
-                            exportvarrefs[j, t]
-                            - importvarrefs[j, t]
-                        )
+                        Pⱼ[j,t] == exportvarrefs[j, t] - importvarrefs[j, t]
                     )
                 else
                     @constraint(m, [t in 1:p.Ntimesteps],
-                        Pⱼ[j,t] == 1e3/p.Sbase * (  # 1e3 b/c REopt values in kW
-                            - importvarrefs[j, t]
-                        )
+                        Pⱼ[j,t] == -importvarrefs[j, t]
                     )
                 end
             else
@@ -65,16 +60,11 @@ function LDF.constrain_loads(m::JuMP.AbstractModel, p::LDF.Inputs, ps::AbstractV
             if j in ps
                 if j in exportvarrefs.axes[1]
                     @constraint(m, [t in 1:p.Ntimesteps],
-                        Qⱼ[j,t] == 1e3/p.Sbase * p.pf * (  # 1e3 b/c REopt values in kW
-                            exportvarrefs[j, t]
-                            - importvarrefs[j, t]
-                        )
+                        Qⱼ[j,t] == exportvarrefs[j, t] - importvarrefs[j, t]
                     )
                 else
                     @constraint(m, [t in 1:p.Ntimesteps],
-                        Qⱼ[j,t] == 1e3/p.Sbase * p.pf * (  # 1e3 b/c REopt values in kW
-                            - importvarrefs[j, t]
-                        )
+                        Qⱼ[j,t] == -importvarrefs[j, t]
                     )
                 end
             else
