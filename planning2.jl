@@ -44,7 +44,7 @@ end
 
 
 # fill in net uncontrolled loads
-T = 10
+T = 8760
 LDFinputs.Ntimesteps = T
 ci = repeat([0.25], T)
 for (i, node) in enumerate(loadnodes)
@@ -64,7 +64,14 @@ LDFinputs.Qload["27"] .-= PVkW * prod_factor[1:T] * 0.1;
 LDFinputs.Pload["18"] .-= PVkW * prod_factor[1:T];
 LDFinputs.Qload["18"] .-= PVkW * prod_factor[1:T] * 0.1;
 
+LDFinputs.v_lolim = 0 # running now, have not changed bounds below, could use more RAM 
 
+peak_load = maximum(sum(values(LDFinputs.Pload)))
+peak_single_load = maximum(maximum(values(LDFinputs.Pload)))
+LDFinputs.P_up_bound =  peak_load * 100
+LDFinputs.Q_up_bound =  peak_load * 10
+LDFinputs.P_lo_bound = -peak_single_load * 100
+LDFinputs.Q_lo_bound = -peak_single_load * 10
 
 model = Model(Gurobi.Optimizer)
 LDF.build_ldf!(model, LDFinputs)
@@ -82,11 +89,12 @@ function linearized_problem(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_ware
     B = [1/(R*C) 1/C]
     u = [tamb zeros(8760)]';  # could replace the zeros vector with endogenous heat input
     J = size(B,2)
-    M = 1e8
+    M = 1e6
     T_hi = 0
     T_lo = -20
 
     model = JuMP.Model(Gurobi.Optimizer)
+    set_optimizer_attribute(model, "MIPGap", 1e-2)
 
     @variables model begin
         M >= yi[LLnodes, 1:T] >= 0
