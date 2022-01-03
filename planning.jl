@@ -21,7 +21,12 @@ include("extend_lindistflow.jl")
 global_logger(ConsoleLogger(stderr, Logging.Debug))
 const MOI = MathOptInterface
 
-
+#= 
+TODO can reduce memory usage in BilevelJuMP.jl#bilinear ??? (memory pressure on 8GB laptop, moved to 32 GB)
+maybe can get linearization from BilevelJuMP, then build single level model?
+"V" in BilevelJuMP has columns and rows for UL too, which is massive with the LDF model,
+    and now have the blocks loop :/
+=#
 #=
         PARAMETERS
 =#
@@ -101,25 +106,23 @@ end
 
 
 # # check power flow feasibility w/baseline PV
-# model = Model(Gurobi.Optimizer)
-# LDF.build_ldf!(model, LDFinputs)
-# optimize!(model)
+model = Model(Gurobi.Optimizer)
+LDF.build_ldf!(model, LDFinputs)
+optimize!(model)
 
 # maximum(sqrt.(value.(model[:vsqrd])))
 
 
 
-optimizer = Gurobi.Optimizer()
-model = BilevelModel(()->optimizer, linearize_bilinear_upper_terms=true)
-T = 8760
+T = 2
 LDFinputs.Ntimesteps =T
 cpv = 1500
 ci = repeat([15], T);
 timesteps_pv = timesteps_pv_complement[findall(t -> t <= T, timesteps_pv_complement)];
 
 for (i, node) in enumerate(loadnodes)
-    LDFinputs.Pload[node] = doe_profiles[i];
-    LDFinputs.Qload[node] = doe_profiles[i] * 0.1;
+    LDFinputs.Pload[node] = doe_profiles[i][1:T];
+    LDFinputs.Qload[node] = doe_profiles[i][1:T] * 0.1;
 end
 # pepper some pv into the system
 PVkW = 2e3   # TODO more baseline PV ?
@@ -133,6 +136,9 @@ LDFinputs.Pload["27"] .-= PVkW * pvpf[1:T];
 LDFinputs.Qload["27"] .-= PVkW * pvpf[1:T] * 0.1;
 LDFinputs.Pload["18"] .-= PVkW * pvpf[1:T];
 LDFinputs.Qload["18"] .-= PVkW * pvpf[1:T] * 0.1;
+
+optimizer = Gurobi.Optimizer()
+model = BilevelModel(()->optimizer, linearize_bilinear_upper_terms=true)
 #= 
         LOWER MODEL VARIABLES
 =#
@@ -221,8 +227,53 @@ end
 
 optimize!(model)
 
+#= use model.var_lower and MOI.get(upper, MOI.ObjectiveFunction{MOI.get(upper, MOI.ObjectiveFunctionType())}()) to look up linearization
+upperobj = MOI.get(model.solver, MOI.ObjectiveFunction{MOI.get(model.solver, MOI.ObjectiveFunctionType())}())
 
+A = [(j,n), (1,1), (2,2)] since ye is the first variable in LL and its load balance is the first two constraints in LL
 
+upper = JuMP.backend(model.upper)
+lower = JuMP.backend(model.lower)
+
+lower_var_indices_of_upper_vars = JuMP.index.(
+    collect(values(model.upper_to_lower_link)))
+upper_to_lower_var_indices = BilevelJuMP.convert_indices(model.link)
+upper_var_lower_ctr = BilevelJuMP.index2(model.upper_var_to_lower_ctr_link)
+
+# moi.jl
+U, V, w = BilevelJuMP.standard_form(lower, upper_var_indices=lower_var_indices_of_upper_vars);
+rows1, cols1, redundant_vals = BilevelJuMP.find_connected_rows_cols(V, 1, 1; skip_1st_col_check=true)
+([1, 5], [4, 8, 10], false)
+rows2, cols2, redundant_vals = BilevelJuMP.find_connected_rows_cols(V, 2, 2; skip_1st_col_check=true)
+([2, 6], [6, 9, 11], false)
+
+julia> for c in cols1 println(model.var_lower[c]) end
+yi[34,1]
+ypvprod[34,1]
+spvprod[34,1]
+
+julia> for c in cols2 println(model.var_lower[c]) end
+yi[34,2]
+ypvprod[34,2]
+spvprod[34,2]
+
+p = Ajn / Vjn = -1
+MathOptInterface.ScalarAffineFunction{Float64}(MathOptInterface.ScalarAffineTerm{Float64}[
+    MathOptInterface.ScalarAffineTerm{Float64}(115.82595, MathOptInterface.VariableIndex(1)), pwf*ci * yi[1]
+    MathOptInterface.ScalarAffineTerm{Float64}(115.82595, MathOptInterface.VariableIndex(3)), pwf*ci * yi[2]
+    MathOptInterface.ScalarAffineTerm{Float64}(-10000.0, MathOptInterface.VariableIndex(18)), M * mu_upper
+    MathOptInterface.ScalarAffineTerm{Float64}(-10000.0, MathOptInterface.VariableIndex(24)), 
+    MathOptInterface.ScalarAffineTerm{Float64}(-10000.0, MathOptInterface.VariableIndex(30)), 
+    MathOptInterface.ScalarAffineTerm{Float64}(-10000.0, MathOptInterface.VariableIndex(42)), 
+    MathOptInterface.ScalarAffineTerm{Float64}(-10000.0, MathOptInterface.VariableIndex(54)), 
+    MathOptInterface.ScalarAffineTerm{Float64}(-10000.0, MathOptInterface.VariableIndex(66)), 
+    MathOptInterface.ScalarAffineTerm{Float64}(0.01419, MathOptInterface.VariableIndex(75)),   x0
+    MathOptInterface.ScalarAffineTerm{Float64}(0.0151825, MathOptInterface.VariableIndex(76)), x0
+    MathOptInterface.ScalarAffineTerm{Float64}(-122.08466166373908, MathOptInterface.VariableIndex(466)),  LDFinputs.Pload["34"][1] (w1 * λ1)
+    MathOptInterface.ScalarAffineTerm{Float64}(-105.96647268103634, MathOptInterface.VariableIndex(467))], 0.0) LDFinputs.Pload["34"][2] (w2 * λ2)
+
+for j = 5 and 6 w_j = 0 so no terms needed (would be lambda_j * w_j)
+=#
 # create problems that lead to non-zero ye (xe) and xi
 # xi = ci s.t. lambda_warehouse = 0 and both levels benefit
 #=
