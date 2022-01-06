@@ -236,7 +236,8 @@ function linearized_problem_bess(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes
     B = [1/(R*C) 1/C]
     u = [tamb zeros(8760)]';  # could replace the zeros vector with endogenous heat input
     J = size(B,2)
-    M = 1e5
+    Mbig = peak_load * 10
+    Msml = peak_single_load * 10
     T_hi = 0
     T_lo = -20
 
@@ -244,34 +245,34 @@ function linearized_problem_bess(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes
     set_optimizer_attribute(model, "MIPGap", 5e-2)
 
     @variables model begin
-        M >= yi[LLnodes, 1:T] >= 0
-        M >= ye[LLnodes_withPV, 1:T] >= 0
-        M >= ypv[LLnodes_withPV] >=0
-        M >= ypvprod[LLnodes_withPV, 1:T] >= 0
+        Msml >= yi[LLnodes, 1:T] >= 0
+        Msml >= ye[LLnodes_withPV, 1:T] >= 0
+        Mbig >= ypv[LLnodes_withPV] >=0
+        Mbig >= ypvprod[LLnodes_withPV, 1:T] >= 0
         T_hi >= ytemperature[LLnodes_warehouse, 1:T] >= T_lo
         ytherm[LLnodes_warehouse, 1:T] >= 0
 
-        M >= xe[LLnodes_withPV, 1:T] >= 0
-        M >= x0[1:T] >= 0
-        M >= xbkW[ULnodes_withBESS] >= 0
-        M >= xbkWh[ULnodes_withBESS] >= 0
-        M >= xsoc[ULnodes_withBESS, 0:T] >= 0
-        M >= xbplus[ULnodes_withBESS, 1:T] >= 0
-        M >= xbminus[ULnodes_withBESS, 1:T] >= 0
+        Mbig >= xe[LLnodes_withPV, 1:T] >= 0
+        Mbig >= x0[1:T] >= 0
+        Mbig >= xbkW[ULnodes_withBESS] >= 0
+        Mbig >= xbkWh[ULnodes_withBESS] >= 0
+        Mbig >= xsoc[ULnodes_withBESS, 0:T] >= 0
+        Mbig >= xbplus[ULnodes_withBESS, 1:T] >= 0
+        Mbig >= xbminus[ULnodes_withBESS, 1:T] >= 0
 
-        M >= lambda[LLnodes_withPV, 1:T] >= -M
-        M >= lambda_warehouse[LLnodes_warehouse, 1:T] >= -M
-        M >= lambda_ss[LLnodes_warehouse, 2:T] >= -M
-        M >= lambda_initTemperature >= -M
-        M >= mu_i[LLnodes, 1:T] >= 0
-        M >= mu_e[LLnodes_withPV, 1:T] >= 0
-        M >= mu_pv[LLnodes_withPV] >= 0
-        M >= mu_pvprod[LLnodes_withPV, 1:T] >= 0
-        M >= mu_dd[LLnodes_withPV, 1:T] >= 0
-        M >= mu_therm_lo[LLnodes_warehouse, 1:T] >= 0
-        M >= mu_therm_hi[LLnodes_warehouse, 1:T] >= 0
-        M >= mu_temperature_lo[LLnodes_warehouse, 1:T] >= 0
-        M >= mu_temperature_hi[LLnodes_warehouse, 1:T] >= 0
+        Mbig >= lambda[LLnodes_withPV, 1:T] >= -Mbig
+        Mbig >= lambda_warehouse[LLnodes_warehouse, 1:T] >= -Mbig
+        Msml >= lambda_ss[LLnodes_warehouse, 2:T] >= -Msml
+        Msml >= lambda_initTemperature >= -Msml
+        Msml >= mu_i[LLnodes, 1:T] >= 0
+        Mbig >= mu_e[LLnodes_withPV, 1:T] >= 0
+        Mbig >= mu_pv[LLnodes_withPV] >= 0
+        Mbig >= mu_pvprod[LLnodes_withPV, 1:T] >= 0
+        Mbig >= mu_dd[LLnodes_withPV, 1:T] >= 0
+        Msml >= mu_therm_lo[LLnodes_warehouse, 1:T] >= 0
+        Msml >= mu_therm_hi[LLnodes_warehouse, 1:T] >= 0
+        Msml >= mu_temperature_lo[LLnodes_warehouse, 1:T] >= 0
+        Msml >= mu_temperature_hi[LLnodes_warehouse, 1:T] >= 0
     end
 
     # UL does not allow simultaneous export/import
@@ -298,7 +299,7 @@ function linearized_problem_bess(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes
         [mu_therm_lo[n,t],  ytherm[n,t]] in MathOptInterface.SOS1([1.0, 2.0])
     )
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
-        [mu_therm_hi[n,t],  ytherm[n,t] - M] in MathOptInterface.SOS1([1.0, 2.0])
+        [mu_therm_hi[n,t],  ytherm[n,t] - Msml] in MathOptInterface.SOS1([1.0, 2.0])
     )
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
         [mu_temperature_lo[n,t],  T_lo - ytemperature[n,t]] in MathOptInterface.SOS1([1.0, 2.0])
@@ -401,6 +402,7 @@ function upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS;
 
     model = JuMP.Model(Gurobi.Optimizer)
     set_optimizer_attribute(model, "MIPGap", 1e-2)
+    M = 1e3
 
     @variables model begin
         M >= yi[["99"], 1:0] >= 0 # dummy for building LinDistFlow model
