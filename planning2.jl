@@ -6,6 +6,7 @@ using DelimitedFiles
 import MathOptInterface
 import LinDistFlow as LDF  # REoptLite exports LinDistFlow, maybe should remove that
 
+# next try adding one PV in LL
 include("extend_lindistflow.jl")
 const MOI = MathOptInterface
 
@@ -31,9 +32,10 @@ tamb = REoptLite.get_ambient_temperature(lat, lon);
 prod_factor = REoptLite.get_pvwatts_prodfactor(lat, lon);  # TODO this function is only in flex branch
 LDFinputs = LDF.singlephase38linesInputs(Sbase=Sbase);  # TODO this method is not released yet
 loadnodes = collect(keys(LDFinputs.Pload))
-LLnodes = ["25", "33", "34", "35"]  # all nodes in LL model (that have decisions)
-LLnodes_withPV = ["25", "34", "35"]
+LLnodes_withPV = ["25"]
 LLnodes_warehouse = ["33"]
+LLnodes = union(LLnodes_withPV, LLnodes_warehouse)  # all nodes in LL model (that have decisions)
+
 
 ULnodes_withBESS = ["2", "7", "24"]
 
@@ -239,7 +241,7 @@ function linearized_problem_bess(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes
     T_lo = -20
 
     model = JuMP.Model(Gurobi.Optimizer)
-    set_optimizer_attribute(model, "MIPGap", 1e-2)
+    set_optimizer_attribute(model, "MIPGap", 5e-2)
 
     @variables model begin
         M >= yi[LLnodes, 1:T] >= 0
@@ -451,8 +453,8 @@ function upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS;
     return model
 end
 
-bkW = value.(model[:xbkW])
-bkWh = value.(model[:xbkWh])
-xbminus = value.(model[:xbminus]);
-xbmplus = value.(model[:xbplus]);
-sum(xbminus.data - xbmplus.data) ≈ 0
+# bkW = value.(model[:xbkW])
+# bkWh = value.(model[:xbkWh])
+# xbminus = value.(model[:xbminus]);
+# xbmplus = value.(model[:xbplus]);
+# sum(xbminus.data - xbmplus.data) ≈ 0
