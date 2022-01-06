@@ -456,59 +456,59 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
     # TODO if !isempty(LLnodes_warehouse) then add cons, variables
 
     # Complementary slackness of KKT, only modeling lower bound in most cases
-    @variable(model, bypv[n in LLnodes_withPV], Bin)
+    @variable(model, bypv[n in LLnodes_withPV], Bin);
     @constraint(model, [n in LLnodes_withPV],
         ypv[n] <= Mbig * bypv[n]
-    )
+    );
     @constraint(model, [n in LLnodes_withPV],
         mu_pv[n] <= Mbig * (1-bypv[n])
-    )
-    @variable(model, bye[n in LLnodes_withPV, t in 1:T], Bin)
+    );
+    @variable(model, bye[n in LLnodes_withPV, t in 1:T], Bin);
     @constraint(model, [n in LLnodes_withPV, t in 1:T], 
         ye[n,t] <= Msml * bye[n,t] 
-    )
+    );
     @constraint(model, [n in LLnodes_withPV, t in 1:T], 
         mu_e[n,t] <= Msml * (1- bye[n,t])
-    )
-    @variable(model, byi[n in LLnodes, t in 1:T], Bin)
+    );
+    @variable(model, byi[n in LLnodes, t in 1:T], Bin);
     @constraint(model, [n in LLnodes, t in 1:T], 
         yi[n,t] <= Msml * byi[n,t]
-    )
+    );
     @constraint(model, [n in LLnodes, t in 1:T], 
         mu_i[n,t] <= Msml * (1 - byi[n,t])
-    )
-    @variable(model, bytherm_lo[n in LLnodes_warehouse, t in 1:T], Bin)
+    );
+    @variable(model, bytherm_lo[n in LLnodes_warehouse, t in 1:T], Bin);
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
         ytherm[n,t] <= Msml * bytherm_lo[n,t]
-    )
+    );
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
         mu_therm_lo[n,t] <= Msml * (1-bytherm_lo[n,t])
-    )
-    @variable(model, bytherm_hi[n in LLnodes_warehouse, t in 1:T], Bin)
+    );
+    @variable(model, bytherm_hi[n in LLnodes_warehouse, t in 1:T], Bin);
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
         ytherm[n,t] - Msml <= Msml * bytherm_hi[n,t]
-    )
+    );
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
         mu_therm_hi[n,t] <=  Msml * (1 - bytherm_hi[n,t])
-    )
-    @variable(model, bytemperature_lo[n in LLnodes_warehouse, t in 1:T], Bin)
+    );
+    @variable(model, bytemperature_lo[n in LLnodes_warehouse, t in 1:T], Bin);
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
         T_lo - ytemperature[n,t] <= Msml * bytemperature_lo[n,t]
-    )
+    );
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
         mu_temperature_lo[n,t] <= Msml * (1 - bytemperature_lo[n,t])
-    )
-    @variable(model, bytemperature_hi[n in LLnodes_warehouse, t in 1:T], Bin)
+    );
+    @variable(model, bytemperature_hi[n in LLnodes_warehouse, t in 1:T], Bin);
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
         ytemperature[n,t] - T_hi <= Msml * bytemperature_hi[n,t]
-    )
+    );
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
         mu_temperature_hi[n,t] <= Msml * (1 - bytemperature_hi[n,t])
-    )
+    );
     @variable(model, bypvprod[n in LLnodes_withPV, t in 1:T], Bin)
     @constraint(model, [n in LLnodes_withPV, t in 1:T], 
         ypvprod[n,t] <= Mbig * bypvprod[n,t]
-    )
+    );
     @constraint(model, [n in LLnodes_withPV, t in 1:T], 
         mu_pvprod[n,t] <= Mbig * (1 - bypvprod[n,t])
     )
@@ -523,7 +523,7 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
     # LL load balance with PV (lambda)
     @constraint(model, [n in LLnodes_withPV, t in 1:T], 
         -ye[n,t] + yi[n,t] + ypvprod[n,t] - LDFinputs.Pload[n][t] == 0
-    )
+    );
 
     # LL load balance for warehouse (lambda_warehouse)
     @constraint(model, [n in LLnodes_warehouse, t in 1:T],
@@ -566,25 +566,25 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
 
     @constraint(model, [n in ULnodes_withBESS],
         xsoc[n,0] == 0.5 * xbkWh[n]
-    )
+    );
     @constraint(model, [n in ULnodes_withBESS],
         xsoc[n,T] == 0.5 * xbkWh[n]
-    )
+    );
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xsoc[n,t] == xsoc[n,t-1] + xbplus[n,t] * η - xbminus[n,t] / η
-    )
+    );
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xbkW[n] >= xbminus[n,t]
-    )
+    );
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xbkW[n] >= xbplus[n,t]
-    )
+    );
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xbkW[n] >= xbplus[n,t] + xbminus[n,t]
-    )
+    );
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xbkWh[n] >= xsoc[n,t]
-    )
+    );
 
     @objective(model, Min, 
         pwf * sum(x0[t] * clmp[t] for t in 1:T)
