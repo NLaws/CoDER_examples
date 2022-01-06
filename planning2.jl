@@ -406,8 +406,8 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
     B = [1/(R*C) 1/C]
     u = [tamb zeros(8760)]';  # could replace the zeros vector with endogenous heat input
     J = size(B,2)
-    Mbig = peak_load * 10
-    Msml = peak_single_load * 10
+    Mbig = peak_load * 100
+    Msml = peak_single_load * 100
     T_hi = 0
     T_lo = -20
 
@@ -595,7 +595,7 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
             for n in LLnodes_withPV, t in 1:T
         )
         + sum(ypv[n] * cpv for n in LLnodes_withPV)
-    )
+    );
 
     optimize!(model)
 
