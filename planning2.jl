@@ -447,7 +447,7 @@ function upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS;
 
     optimize!(model)
 
-    # Optimal objective  8.730295338e+03
+    # pwf *=5 results in batteries
     return model
 end
 
@@ -455,9 +455,4 @@ bkW = value.(model[:xbkW])
 bkWh = value.(model[:xbkWh])
 xbminus = value.(model[:xbminus]);
 xbmplus = value.(model[:xbplus]);
-sum(xbminus.data - xbmplus.data)
-#= -1216.660933832071 
-net charging battery
-why is the model choosing to pay for cbkW and increase demand? voltage limits? 
-sum(xbminus.data/η - xbmplus.data*η)
-=#
+sum(xbminus.data - xbmplus.data) ≈ 0
