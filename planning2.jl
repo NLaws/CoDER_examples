@@ -14,20 +14,21 @@ const MOI = MathOptInterface
 # maybe start values will help? previous commit solved with 10% gap, had v_lolim = 0 (and v=0 in solution)
 
 lat, lon = 30.2672, -97.7431  # Austin, TX
-cpv = 1400
-cbkW = 700
-cbkWh = 350
+# working in MW units, so prices must be in $/MW
+cpv = 1400 / 1000
+cbMW = 600 / 1000
+cbMWh = 300 / 1000
 η = 0.95
 years = 10
 discountrate = 0.05
 M = 10_000  # default bound for decision variables
 CHILLER_COP = 4.55
 #***********************#
-Sbase=1e3
+Sbase=1e6 # making loads/injections small and unitless by dividing by 1 MW, assumes that value being normalized is in watts
 #***********************#
 pwf = REoptLite.annuity(years, 0.0, discountrate)
 clmp = vec(readdlm("./data/cleaned_ercot2019_RTprices.csv", ',', Float64, '\n'));
-clmp = abs.(clmp) / Sbase;  # problem is unbounded with negative prices, convert from $/MWh to $/kWh
+clmp = abs.(clmp) * Sbase / 1e6;  # problem is unbounded with negative prices, convert from $/MWh to $/Sbase-hour
 tamb = REoptLite.get_ambient_temperature(lat, lon);
 prod_factor = REoptLite.get_pvwatts_prodfactor(lat, lon);  # TODO this function is only in flex branch
 LDFinputs = LDF.singlephase38linesInputs(Sbase=Sbase);  # TODO this method is not released yet
@@ -56,21 +57,21 @@ ci = repeat([0.25], T)
 for (i, node) in enumerate(loadnodes)
     # need to scale down or remove some loads. 
     # Baseline minimum(sqrt.(value.(model[:vsqrd]))) = 0.9176
-    LDFinputs.Pload[node] = doe_profiles[i][1:T] / Sbase;
-    LDFinputs.Qload[node] = doe_profiles[i][1:T] / Sbase * 0.1;
+    LDFinputs.Pload[node] = doe_profiles[i][1:T] * 1e3 / Sbase;
+    LDFinputs.Qload[node] = doe_profiles[i][1:T] * 1e3 / Sbase * 0.1;
 end
 # pepper some pv into the system
 PVkW = 2e3   # TODO more baseline PV ?
-LDFinputs.Pload["3"] .-= PVkW * prod_factor[1:T] / Sbase;
-LDFinputs.Qload["3"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
-LDFinputs.Pload["30"] .-= PVkW * prod_factor[1:T] / Sbase;
-LDFinputs.Qload["30"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
-LDFinputs.Pload["28"] .-= PVkW * prod_factor[1:T] / Sbase;
-LDFinputs.Qload["28"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
-LDFinputs.Pload["27"] .-= PVkW * prod_factor[1:T] / Sbase;
-LDFinputs.Qload["27"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
-LDFinputs.Pload["18"] .-= PVkW * prod_factor[1:T] / Sbase;
-LDFinputs.Qload["18"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
+LDFinputs.Pload["3"] .-= PVkW * prod_factor[1:T] * 1e3 / Sbase;
+LDFinputs.Qload["3"] .-= PVkW * prod_factor[1:T] * 1e3 / Sbase * 0.1;
+LDFinputs.Pload["30"] .-= PVkW * prod_factor[1:T] * 1e3 / Sbase;
+LDFinputs.Qload["30"] .-= PVkW * prod_factor[1:T] * 1e3 / Sbase * 0.1;
+LDFinputs.Pload["28"] .-= PVkW * prod_factor[1:T] * 1e3 / Sbase;
+LDFinputs.Qload["28"] .-= PVkW * prod_factor[1:T] * 1e3 / Sbase * 0.1;
+LDFinputs.Pload["27"] .-= PVkW * prod_factor[1:T] * 1e3 / Sbase;
+LDFinputs.Qload["27"] .-= PVkW * prod_factor[1:T] * 1e3 / Sbase * 0.1;
+LDFinputs.Pload["18"] .-= PVkW * prod_factor[1:T] * 1e3 / Sbase;
+LDFinputs.Qload["18"] .-= PVkW * prod_factor[1:T] * 1e3 / Sbase * 0.1;
 
 LDFinputs.v_lolim = 0.0
 
@@ -82,9 +83,9 @@ LDFinputs.P_lo_bound = -peak_single_load * 100
 LDFinputs.Q_lo_bound = -peak_single_load * 10
 
 ## check UL power flow feasibility
-# model = Model(Gurobi.Optimizer)
-# LDF.build_ldf!(model, LDFinputs)
-# optimize!(model)
+model = Model(Gurobi.Optimizer)
+LDF.build_ldf!(model, LDFinputs)
+optimize!(model)
 
 
 # compare to BilevelJuMP result with T = 2, 10?
@@ -254,8 +255,8 @@ function linearized_problem_bess(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes
 
         Mbig >= xe[LLnodes_withPV, 1:T] >= 0
         Mbig >= x0[1:T] >= 0
-        Mbig >= xbkW[ULnodes_withBESS] >= 0
-        Mbig >= xbkWh[ULnodes_withBESS] >= 0
+        Mbig >= xbMW[ULnodes_withBESS] >= 0
+        Mbig >= xbMWh[ULnodes_withBESS] >= 0
         Mbig >= xsoc[ULnodes_withBESS, 0:T] >= 0
         Mbig >= xbplus[ULnodes_withBESS, 1:T] >= 0
         Mbig >= xbminus[ULnodes_withBESS, 1:T] >= 0
@@ -359,30 +360,30 @@ function linearized_problem_bess(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes
     @constraint(model, [t in 1:T], x0[t] >= model[:Pⱼ]["0", t] );
 
     @constraint(model, [n in ULnodes_withBESS],
-        xsoc[n,0] == 0.5 * xbkWh[n]
+        xsoc[n,0] == 0.5 * xbMWh[n]
     )
     @constraint(model, [n in ULnodes_withBESS],
-        xsoc[n,T] == 0.5 * xbkWh[n]
+        xsoc[n,T] == 0.5 * xbMWh[n]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xsoc[n,t] == xsoc[n,t-1] + xbplus[n,t] * η - xbminus[n,t] / η
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkW[n] >= xbminus[n,t]
+        xbMW[n] >= xbminus[n,t]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkW[n] >= xbplus[n,t]
+        xbMW[n] >= xbplus[n,t]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkW[n] >= xbplus[n,t] + xbminus[n,t]
+        xbMW[n] >= xbplus[n,t] + xbminus[n,t]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkWh[n] >= xsoc[n,t]
+        xbMWh[n] >= xsoc[n,t]
     )
 
     @objective(model, Min, 
         pwf * sum(x0[t] * clmp[t] for t in 1:T)
-        + sum(cbkW * xbkW[n] + cbkWh * xbkWh[n] for n in ULnodes_withBESS)
+        + sum(cbMW * xbMW[n] + cbMWh * xbMWh[n] for n in ULnodes_withBESS)
         + pwf * sum(
             ci[t] * yi[n,t] - lambda[n,t] * LDFinputs.Pload[n][t]
             for n in LLnodes_withPV, t in 1:T
@@ -424,8 +425,8 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
 
         Mbig >= xe[LLnodes_withPV, 1:T] >= 0
         Mbig >= x0[1:T] >= 0
-        Mbig >= xbkW[ULnodes_withBESS] >= 0
-        Mbig >= xbkWh[ULnodes_withBESS] >= 0
+        Mbig >= xbMW[ULnodes_withBESS] >= 0
+        Mbig >= xbMWh[ULnodes_withBESS] >= 0
         Mbig >= xsoc[ULnodes_withBESS, 0:T] >= 0
         Mbig >= xbplus[ULnodes_withBESS, 1:T] >= 0
         Mbig >= xbminus[ULnodes_withBESS, 1:T] >= 0
@@ -566,30 +567,30 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
     @constraint(model, [t in 1:T], x0[t] >= model[:Pⱼ]["0", t] );
 
     @constraint(model, [n in ULnodes_withBESS],
-        xsoc[n,0] == 0.5 * xbkWh[n]
+        xsoc[n,0] == 0.5 * xbMWh[n]
     )
     @constraint(model, [n in ULnodes_withBESS],
-        xsoc[n,T] == 0.5 * xbkWh[n]
+        xsoc[n,T] == 0.5 * xbMWh[n]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xsoc[n,t] == xsoc[n,t-1] + xbplus[n,t] * η - xbminus[n,t] / η
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkW[n] >= xbminus[n,t]
+        xbMW[n] >= xbminus[n,t]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkW[n] >= xbplus[n,t]
+        xbMW[n] >= xbplus[n,t]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkW[n] >= xbplus[n,t] + xbminus[n,t]
+        xbMW[n] >= xbplus[n,t] + xbminus[n,t]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkWh[n] >= xsoc[n,t]
+        xbMWh[n] >= xsoc[n,t]
     )
 
     @objective(model, Min, 
         pwf * sum(x0[t] * clmp[t] for t in 1:T)
-        + sum(cbkW * xbkW[n] + cbkWh * xbkWh[n] for n in ULnodes_withBESS)
+        + sum(cbMW * xbMW[n] + cbMWh * xbMWh[n] for n in ULnodes_withBESS)
         + pwf * sum(
             ci[t] * yi[n,t] - lambda[n,t] * LDFinputs.Pload[n][t]
             for n in LLnodes_withPV, t in 1:T
@@ -614,8 +615,8 @@ function upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS;
         M >= yi[["99"], 1:0] >= 0 # dummy for building LinDistFlow model
         M >= ye[["99"], 1:0] >= 0 # dummy for building LinDistFlow model
         
-        M >= xbkW[ULnodes_withBESS] >= 0
-        M >= xbkWh[ULnodes_withBESS] >= 0
+        M >= xbMW[ULnodes_withBESS] >= 0
+        M >= xbMWh[ULnodes_withBESS] >= 0
         M >= xsoc[ULnodes_withBESS, 0:T] >= 0
         M >= xbplus[ULnodes_withBESS, 1:T] >= 0
         M >= xbminus[ULnodes_withBESS, 1:T] >= 0
@@ -629,30 +630,30 @@ function upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS;
     @constraint(model, [t in 1:T], x0[t] >= model[:Pⱼ]["0", t] );
 
     @constraint(model, [n in ULnodes_withBESS],
-        xsoc[n,0] == 0.5 * xbkWh[n]
+        xsoc[n,0] == 0.5 * xbMWh[n]
     )
     # @constraint(model, [n in ULnodes_withBESS],
-    #     xsoc[n,T] == 0.5 * xbkWh[n]
+    #     xsoc[n,T] == 0.5 * xbMWh[n]
     # )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xsoc[n,t] == xsoc[n,t-1] + xbplus[n,t] * η - xbminus[n,t] / η
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkW[n] >= xbminus[n,t]
+        xbMW[n] >= xbminus[n,t]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkW[n] >= xbplus[n,t]
+        xbMW[n] >= xbplus[n,t]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkW[n] >= xbplus[n,t] + xbminus[n,t]
+        xbMW[n] >= xbplus[n,t] + xbminus[n,t]
     )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
-        xbkWh[n] >= xsoc[n,t]
+        xbMWh[n] >= xsoc[n,t]
     )
 
     @objective(model, Min, 
         pwf * sum(x0[t] * clmp[t] for t in 1:T)
-        + sum(cbkW * xbkW[n] + cbkWh * xbkWh[n] for n in ULnodes_withBESS)
+        + sum(cbMW * xbMW[n] + cbMWh * xbMWh[n] for n in ULnodes_withBESS)
     )
 
     optimize!(model)
@@ -661,8 +662,8 @@ function upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS;
     return model
 end
 
-# bkW = value.(model[:xbkW])
-# bkWh = value.(model[:xbkWh])
+# bMW = value.(model[:xbMW])
+# bMWh = value.(model[:xbMWh])
 # xbminus = value.(model[:xbminus]);
 # xbmplus = value.(model[:xbplus]);
 # sum(xbminus.data - xbmplus.data) ≈ 0
