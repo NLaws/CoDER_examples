@@ -5,7 +5,8 @@ using REoptLite
 using DelimitedFiles
 import MathOptInterface
 import LinDistFlow as LDF  # REoptLite exports LinDistFlow, maybe should remove that
-
+using Random
+Random.seed!(42)
 # next try adding one PV in LL
 include("extend_lindistflow.jl")
 const MOI = MathOptInterface
@@ -42,10 +43,9 @@ ULnodes_withBESS = ["2", "7", "24"]
 profile_names = ["FastFoodRest", "FullServiceRest", "Hospital", "LargeHotel", "LargeOffice", 
 "MediumOffice", "MidriseApartment", "Outpatient", "PrimarySchool", "RetailStore", "SecondarySchool", 
 "SmallHotel", "SmallOffice", "StripMall", "Supermarket", "Warehouse"]
-rand_names = rand(profile_names, length(loadnodes))
-doe_profiles = Any[]
-for (i, node) in enumerate(loadnodes)
-    push!(doe_profiles, REoptLite.BuiltInElectricLoad("", rand_names[i], lat, lon, 2017))
+doe_profiles = Dict{String, Vector{Float64}}()
+for name in profile_names
+    doe_profiles[name] = REoptLite.BuiltInElectricLoad("", name, lat, lon, 2017)
 end
 
 
@@ -53,11 +53,10 @@ end
 T = 8760
 LDFinputs.Ntimesteps = T
 ci = repeat([0.25], T)
+rand_names = rand(profile_names, length(loadnodes))
 for (i, node) in enumerate(loadnodes)
-    # need to scale down or remove some loads. 
-    # Baseline minimum(sqrt.(value.(model[:vsqrd]))) = 0.9176
-    LDFinputs.Pload[node] = doe_profiles[i][1:T] / Sbase;
-    LDFinputs.Qload[node] = doe_profiles[i][1:T] / Sbase * 0.1;
+    LDFinputs.Pload[node] = doe_profiles[rand_names[i]][1:T] / Sbase;
+    LDFinputs.Qload[node] = doe_profiles[rand_names[i]][1:T] / Sbase * 0.1;
 end
 # pepper some pv into the system
 PVkW = 2e3   # TODO more baseline PV ?
