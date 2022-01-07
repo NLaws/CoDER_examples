@@ -7,12 +7,11 @@ import MathOptInterface
 import LinDistFlow as LDF  # REoptLite exports LinDistFlow, maybe should remove that
 using Random
 Random.seed!(42)
-# next try adding one PV in LL
 include("extend_lindistflow.jl")
 const MOI = MathOptInterface
 
 # TODO get PV and BESS in solution with lower T using high pwf? might need to raise LMP too
-# maybe start values will help? previous commit solved with 10% gap, had v_lolim = 0 (and v=0 in solution)
+# maybe start values will help?
 
 lat, lon = 30.2672, -97.7431  # Austin, TX
 η = 0.95
@@ -35,14 +34,21 @@ cbkW = 700
 cbkWh = 350
 ci = repeat([0.25], T);
 
+# outdoor temperature and PV production factor
 tamb = REoptLite.get_ambient_temperature(lat, lon);
 prod_factor = REoptLite.get_pvwatts_prodfactor(lat, lon);
+
+# power flow inputs
 LDFinputs = LDF.singlephase38linesInputs(Sbase=Sbase);
 loadnodes = collect(keys(LDFinputs.Pload))
 # remove some loadnodes to make problem smaller and keep voltage further from lower limit
-loadnode = loadnodes[3:end-3]  # removes "32", "12", "25",  "18", "30", "3"
-LLnodes_withPV = ["22"]
-LLnodes_warehouse = ["33"]
+loadnodes = loadnodes[3:end-3]  # removes "32", "12", "25",  "18", "30", "3"
+for n in ["32", "12", "25",  "18", "30", "3"]
+    delete!(LDFinputs.Pload, n)
+    delete!(LDFinputs.Qload, n)
+end
+LLnodes_withPV = ["9", "22", "31", "34"]  # TODO more PV options in LL, can add any of the loadnodes
+LLnodes_warehouse = []  # TODO more warehouse options in LL (price responsive refrigeration), can add any of the loadnodes
 LLnodes = union(LLnodes_withPV, LLnodes_warehouse)  # all nodes in LL model (that have decisions)
 
 ULnodes_withBESS = ["2", "7", "24"]
@@ -91,10 +97,10 @@ LDFinputs.Q_lo_bound = -peak_single_load * 10
 
 #= these voltages should be the same after changing Sbase, which they are.
 julia> maximum(sqrt.(value.(model[:vsqrd])))
-1.0043089018838498
+1.008374586764746
 
 julia> minimum(sqrt.(value.(model[:vsqrd])))
-0.9792230136873432
+0.9845817662226841
 =#
 
 
@@ -418,10 +424,159 @@ end
 
 
 """
+    linearized_problem_bess_bigM_no_warehouse(cpv, ci, clmp, LLnodes, LLnodes_withPV, LDFinputs, ULnodes_withBESS; 
+        T=8760)
+
+MILP with bigM constraints for complementary constraints and battery options in upper level.
+
+TODO: xi price signal to refrigerated warehouses
+"""
+function linearized_problem_bess_bigM_no_warehouse(cpv, ci, clmp, LLnodes, LLnodes_withPV, LDFinputs, ULnodes_withBESS; 
+    T=8760)
+
+    Mbig = peak_load * 1000
+    Msml = peak_single_load * 100
+
+    model = JuMP.Model(Gurobi.Optimizer)
+    set_optimizer_attribute(model, "MIPGap", 5e-2)
+
+    @variables model begin
+        Msml >= yi[LLnodes, 1:T] >= 0
+        Mbig >= ye[LLnodes_withPV, 1:T] >= 0
+        Mbig >= ypv[LLnodes_withPV] >=0
+        Mbig >= ypvprod[LLnodes_withPV, 1:T] >= 0
+
+        Mbig >= xe[LLnodes_withPV, 1:T] >= 0
+        Mbig >= x0[1:T] >= 0
+        Mbig >= xbkW[ULnodes_withBESS] >= 0
+        Mbig >= xbkWh[ULnodes_withBESS] >= 0
+        Mbig >= xsoc[ULnodes_withBESS, 0:T] >= 0
+        Mbig >= xbplus[ULnodes_withBESS, 1:T] >= 0
+        Mbig >= xbminus[ULnodes_withBESS, 1:T] >= 0
+
+        Mbig >= lambda[LLnodes_withPV, 1:T] >= -Mbig
+        Mbig >= mu_i[LLnodes, 1:T] >= 0
+        Mbig >= mu_e[LLnodes_withPV, 1:T] >= 0
+        Mbig >= mu_pv[LLnodes_withPV] >= 0
+        Mbig >= mu_pvprod[LLnodes_withPV, 1:T] >= 0
+        Mbig >= mu_dd[LLnodes_withPV, 1:T] >= 0
+    end
+
+    # UL does not allow simultaneous export/import
+    @variable(model, byeyi[LLnodes_withPV, t in 1:T], Bin);
+    @constraint(model, [n in LLnodes_withPV, t in 1:T],
+        ye[n,t] <= Mbig * byeyi[n,t]
+    );
+    @constraint(model, [n in LLnodes_withPV, t in 1:T],
+        yi[n,t] <= Mbig * (1-byeyi[n,t])
+    );
+    
+    # LinDistFlow (single phase, real power only)
+    LDF.build_ldf!(model, LDFinputs, LLnodes, ye, yi, xbplus, xbminus);
+
+    # Complementary slackness of KKT, only modeling lower bound in most cases
+    @variable(model, bypv[n in LLnodes_withPV], Bin);
+    @constraint(model, [n in LLnodes_withPV],
+        ypv[n] <= Mbig * bypv[n]
+    );
+    @constraint(model, [n in LLnodes_withPV],
+        mu_pv[n] <= Mbig * (1-bypv[n])
+    );
+    @variable(model, bye[n in LLnodes_withPV, t in 1:T], Bin);
+    @constraint(model, [n in LLnodes_withPV, t in 1:T], 
+        ye[n,t] <= Msml * bye[n,t] 
+    );
+    @constraint(model, [n in LLnodes_withPV, t in 1:T], 
+        mu_e[n,t] <= Msml * (1- bye[n,t])
+    );
+    @variable(model, byi[n in LLnodes, t in 1:T], Bin);
+    @constraint(model, [n in LLnodes, t in 1:T], 
+        yi[n,t] <= Msml * byi[n,t]
+    );
+    @constraint(model, [n in LLnodes, t in 1:T], 
+        mu_i[n,t] <= Msml * (1 - byi[n,t])
+    );
+    @variable(model, bypvprod[n in LLnodes_withPV, t in 1:T], Bin)
+    @constraint(model, [n in LLnodes_withPV, t in 1:T], 
+        ypvprod[n,t] <= Mbig * bypvprod[n,t]
+    );
+    @constraint(model, [n in LLnodes_withPV, t in 1:T], 
+        mu_pvprod[n,t] <= Mbig * (1 - bypvprod[n,t])
+    )
+    @variable(model, bydd[n in LLnodes_withPV, t in 1:T], Bin)
+    @constraint(model, [n in LLnodes_withPV, t in 1:T], 
+        ypvprod[n,t] - ypv[n] * prod_factor[t] <= Mbig * bydd[n,t]
+    )
+    @constraint(model, [n in LLnodes_withPV, t in 1:T], 
+        mu_dd[n,t] <= Mbig * (1 - bydd[n,t])
+    )
+
+    # LL load balance with PV (lambda)
+    @constraint(model, [n in LLnodes_withPV, t in 1:T], 
+        -ye[n,t] + yi[n,t] + ypvprod[n,t] - LDFinputs.Pload[n][t] == 0
+    );
+    
+    # LL operational
+    @constraint(model, [n in LLnodes_withPV,t in 1:T], ypvprod[n,t] ≤ ypv[n] * prod_factor[t] )  # mu_dd[t]
+    
+    ## LL duals
+    @constraint(model, [n in LLnodes_withPV], 
+        cpv - mu_pv[n] - sum(mu_dd[n,t] * prod_factor[t] for t in 1:T) == 0);  # dual constraint of ypv
+    @constraint(model, [n in LLnodes_withPV, t in 1:T], 
+        -xe[n,t] + lambda[n,t] - mu_e[n,t] == 0);  # dual constraint of ye[t]
+    @constraint(model, [n in LLnodes_withPV, t in 1:T], 
+        ci[t] - lambda[n, t] - mu_i[n,t] == 0);  # dual constraint of yi[t] for LLnodes_withPV
+    @constraint(model, [n in LLnodes_withPV, t in 1:T],       
+        -lambda[n, t] - mu_pvprod[n,t] + mu_dd[n, t] == 0);  # dual constraint of ypvprod[t]
+
+    # UL constraints
+    @constraint(model, [t in 1:T], x0[t] >= model[:Pⱼ]["0", t] );
+
+    @constraint(model, [n in ULnodes_withBESS],
+        xsoc[n,0] == 0.5 * xbkWh[n]
+    );
+    @constraint(model, [n in ULnodes_withBESS],
+        xsoc[n,T] == 0.5 * xbkWh[n]
+    );
+    @constraint(model, [n in ULnodes_withBESS, t in 1:T],
+        xsoc[n,t] == xsoc[n,t-1] + xbplus[n,t] * η - xbminus[n,t] / η
+    );
+    @constraint(model, [n in ULnodes_withBESS, t in 1:T],
+        xbkW[n] >= xbminus[n,t]
+    );
+    @constraint(model, [n in ULnodes_withBESS, t in 1:T],
+        xbkW[n] >= xbplus[n,t]
+    );
+    @constraint(model, [n in ULnodes_withBESS, t in 1:T],
+        xbkW[n] >= xbplus[n,t] + xbminus[n,t]
+    );
+    @constraint(model, [n in ULnodes_withBESS, t in 1:T],
+        xbkWh[n] >= xsoc[n,t]
+    );
+
+    @objective(model, Min, 
+        5*pwf * sum(x0[t] * clmp[t] for t in 1:T)
+        + sum(cbkW * xbkW[n] + cbkWh * xbkWh[n] for n in ULnodes_withBESS)
+        + pwf * sum(
+            ci[t] * yi[n,t] - lambda[n,t] * LDFinputs.Pload[n][t]
+            for n in LLnodes_withPV, t in 1:T
+        )
+        + sum(ypv[n] * cpv for n in LLnodes_withPV)
+    );
+
+    optimize!(model)
+
+    return model
+end
+
+
+"""
     linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_warehouse, LDFinputs, ULnodes_withBESS; 
         T=8760)
 
 MILP with bigM constraints for complementary constraints and battery options in upper level.
+
+TODO: xi price signal to refrigerated warehouses
 """
 function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_warehouse, LDFinputs, ULnodes_withBESS; 
     T=8760)
@@ -626,6 +781,7 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
             for n in LLnodes_withPV, t in 1:T
         )
         + sum(ypv[n] * cpv for n in LLnodes_withPV)
+        + sum(ci[t] * yi[n,t] for n in LLnodes_warehouse, t in 1:T)
     );
 
     optimize!(model)
