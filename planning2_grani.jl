@@ -778,7 +778,6 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
             for n in LLnodes_withPV, t in 1:T
         )
         + sum(ypv[n] * cpv for n in LLnodes_withPV)
-        + sum((ci[t] + xi[n,t]) * yi[n,t] for n in LLnodes_warehouse, t in 1:T)
     );
 
     optimize!(model)
