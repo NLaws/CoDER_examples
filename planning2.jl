@@ -537,7 +537,8 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
         ytemperature[n, t] - ytemperature[n, t-1] - A[1, 1] * ytemperature[n, t-1] -
         sum(B[1, j] * u[j, t-1] for j=1:J) + B[1, 1] * ytherm[n, t-1] ==  0
     );
-    @constraint(model, [n in LLnodes_warehouse], ytemperature[n, 1] == -1.0);  # initial temperature (lambda_initTemperature)
+    # initial temperature (lambda_initTemperature)
+    @constraint(model, [n in LLnodes_warehouse], ytemperature[n, 1] == -1.0);  
 
     
     # LL operational
@@ -545,23 +546,25 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
     
     ## LL duals
     @constraint(model, [n in LLnodes_withPV], 
-        cpv - mu_pv[n] - sum(mu_dd[n,t] * prod_factor[t] for t in 1:T) == 0)  # dual constraint of ypv
+        cpv - mu_pv[n] - sum(mu_dd[n,t] * prod_factor[t] for t in 1:T) == 0);  # dual constraint of ypv
     @constraint(model, [n in LLnodes_withPV, t in 1:T], 
-        -xe[n,t] + lambda[n,t] - mu_e[n,t] == 0)  # dual constraint of ye[t]
+        -xe[n,t] + lambda[n,t] - mu_e[n,t] == 0);  # dual constraint of ye[t]
     @constraint(model, [n in LLnodes_withPV, t in 1:T], 
-        ci[t] - lambda[n, t] - mu_i[n,t] == 0)  # dual constraint of yi[t] for LLnodes_withPV
+        ci[t] - lambda[n, t] - mu_i[n,t] == 0);  # dual constraint of yi[t] for LLnodes_withPV
     @constraint(model, [n in LLnodes_withPV, t in 1:T],       
-        -lambda[n, t] - mu_pvprod[n,t] + mu_dd[n, t] == 0)  # dual constraint of ypvprod[t]
+        -lambda[n, t] - mu_pvprod[n,t] + mu_dd[n, t] == 0);  # dual constraint of ypvprod[t]
     @constraint(model, [n in LLnodes_warehouse, t in 1:T-1], 
-        lambda_warehouse[n, t]/CHILLER_COP - B[1,1]*lambda_ss[n,t+1] - mu_therm_lo[n,t] + mu_therm_hi[n,t] == 0)  # dual constraint of ytherm
+        lambda_warehouse[n, t]/CHILLER_COP - B[1,1]*lambda_ss[n,t+1] - mu_therm_lo[n,t] + mu_therm_hi[n,t] == 0);  # dual constraint of ytherm
     @constraint(model, [n in LLnodes_warehouse], 
-        lambda_warehouse[n, T]/CHILLER_COP - mu_therm_lo[n,T] + mu_therm_hi[n,T] == 0)  # dual constraint of ytherm[T]
-    @constraint(model, [n in LLnodes_warehouse], (1+A[1,1]) * lambda_ss[n,2] - mu_temperature_lo[n,1] + mu_temperature_hi[n,1] - lambda_initTemperature == 0)  # dual constraint of ytemperature[1]
+        lambda_warehouse[n, T]/CHILLER_COP - mu_therm_lo[n,T] + mu_therm_hi[n,T] == 0);  # dual constraint of ytherm[T]
+    @constraint(model, [n in LLnodes_warehouse], 
+        (1+A[1,1]) * lambda_ss[n,2] - mu_temperature_lo[n,1] + mu_temperature_hi[n,1] - lambda_initTemperature == 0);  # dual constraint of ytemperature[1]
     @constraint(model, [n in LLnodes_warehouse, t in 2:T-1],       
-        -lambda_ss[n, t] + (1+A[1,1])*lambda_ss[n,t+1] - mu_temperature_lo[n,t] + mu_temperature_hi[n,t] == 0)  # dual constraint of ytemperature
-    @constraint(model, [n in LLnodes_warehouse], -lambda_ss[n,T] - mu_temperature_lo[n,T] + mu_temperature_hi[n,T] == 0)  # dual constraint of ytemperature[T]
+        -lambda_ss[n, t] + (1+A[1,1])*lambda_ss[n,t+1] - mu_temperature_lo[n,t] + mu_temperature_hi[n,t] == 0);  # dual constraint of ytemperature
+    @constraint(model, [n in LLnodes_warehouse], 
+        -lambda_ss[n,T] - mu_temperature_lo[n,T] + mu_temperature_hi[n,T] == 0);  # dual constraint of ytemperature[T]
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
-        ci[t] - lambda_warehouse[n, t] - mu_i[n,t] == 0)  # dual constraint of yi[t] for LLnodes_warehouse
+        ci[t] - lambda_warehouse[n, t] - mu_i[n,t] == 0);  # dual constraint of yi[t] for LLnodes_warehouse
 
     # UL constraints
     @constraint(model, [t in 1:T], x0[t] >= model[:Pⱼ]["0", t] );
@@ -631,30 +634,30 @@ function upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS;
 
     @constraint(model, [n in ULnodes_withBESS],
         xsoc[n,0] == 0.5 * xbkWh[n]
-    )
+    );
     # @constraint(model, [n in ULnodes_withBESS],
     #     xsoc[n,T] == 0.5 * xbkWh[n]
     # )
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xsoc[n,t] == xsoc[n,t-1] + xbplus[n,t] * η - xbminus[n,t] / η
-    )
+    );
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xbkW[n] >= xbminus[n,t]
-    )
+    );
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xbkW[n] >= xbplus[n,t]
-    )
+    );
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xbkW[n] >= xbplus[n,t] + xbminus[n,t]
-    )
+    );
     @constraint(model, [n in ULnodes_withBESS, t in 1:T],
         xbkWh[n] >= xsoc[n,t]
-    )
+    );
 
     @objective(model, Min, 
         pwf * sum(x0[t] * clmp[t] for t in 1:T)
         + sum(cbkW * xbkW[n] + cbkWh * xbkWh[n] for n in ULnodes_withBESS)
-    )
+    );
 
     optimize!(model)
 
