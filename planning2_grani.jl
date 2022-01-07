@@ -876,9 +876,3 @@ end
 
 
 =#
-
-function report_results(model)
-
-
-    LLcost = @expression(model, )
-end
