@@ -15,9 +15,6 @@ const MOI = MathOptInterface
 # maybe start values will help? previous commit solved with 10% gap, had v_lolim = 0 (and v=0 in solution)
 
 lat, lon = 30.2672, -97.7431  # Austin, TX
-cpv = 1400
-cbkW = 700
-cbkWh = 350
 η = 0.95
 years = 20
 discountrate = 0.05
@@ -26,9 +23,18 @@ CHILLER_COP = 4.55
 #***********************#
 Sbase=1e3  # best to use Sbase of 1kW because thermal model assumes kW and kJ
 #***********************#
+
+#   cost components
 pwf = REoptLite.annuity(years, 0.0, discountrate)
+T = 8760
+
 clmp = vec(readdlm("./data/cleaned_ercot2019_RTprices.csv", ',', Float64, '\n'));
 clmp = abs.(clmp) / 1e3;  # problem is unbounded with negative prices, convert from $/MWh to $/kWh
+cpv = 1400
+cbkW = 700
+cbkWh = 350
+ci = repeat([0.25], T);
+
 tamb = REoptLite.get_ambient_temperature(lat, lon);
 prod_factor = REoptLite.get_pvwatts_prodfactor(lat, lon);  # TODO this function is only in flex branch
 LDFinputs = LDF.singlephase38linesInputs(Sbase=Sbase);  # TODO this method is not released yet
@@ -664,12 +670,12 @@ function upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS;
 
     optimize!(model)
 
-    # pwf *=5 results in batteries
+    # pwf *= 5 results in batteries
     return model
 end
 
-# bkW = value.(model[:xbkW])
-# bkWh = value.(model[:xbkWh])
-# xbminus = value.(model[:xbminus]);
-# xbmplus = value.(model[:xbplus]);
-# sum(xbminus.data - xbmplus.data) ≈ 0
+bkW = value.(model[:xbkW])
+bkWh = value.(model[:xbkWh])
+xbminus = value.(model[:xbminus]);
+xbplus = value.(model[:xbplus]);
+# sum(xbminus.data - xbplus.data) ≈ 0
