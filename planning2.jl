@@ -36,15 +36,14 @@ cbkWh = 350
 ci = repeat([0.25], T);
 
 tamb = REoptLite.get_ambient_temperature(lat, lon);
-prod_factor = REoptLite.get_pvwatts_prodfactor(lat, lon);  # TODO this function is only in flex branch
-LDFinputs = LDF.singlephase38linesInputs(Sbase=Sbase);  # TODO this method is not released yet
+prod_factor = REoptLite.get_pvwatts_prodfactor(lat, lon);
+LDFinputs = LDF.singlephase38linesInputs(Sbase=Sbase);
 loadnodes = collect(keys(LDFinputs.Pload))
 # remove some loadnodes to make problem smaller and keep voltage further from lower limit
 loadnode = loadnodes[3:end-3]  # removes "32", "12", "25",  "18", "30", "3"
 LLnodes_withPV = ["22"]
 LLnodes_warehouse = ["33"]
 LLnodes = union(LLnodes_withPV, LLnodes_warehouse)  # all nodes in LL model (that have decisions)
-
 
 ULnodes_withBESS = ["2", "7", "24"]
 
@@ -53,8 +52,9 @@ profile_names = ["FastFoodRest", "FullServiceRest", "Hospital", "LargeHotel", "L
 "SmallHotel", "SmallOffice", "StripMall", "Supermarket", "Warehouse"]
 doe_profiles = Dict{String, Vector{Float64}}()
 for name in profile_names
-    doe_profiles[name] = REoptLite.BuiltInElectricLoad("", name, lat, lon, 2017)
+    doe_profiles[name] = REoptLite.BuiltInElectricLoad("", name, Real(lat), Real(lon), 2017, nothing, Real[])  
 end
+# TODO address type issues in REoptLite
 rand_names = rand(profile_names, length(loadnodes))
 
 # fill in net uncontrolled loads
@@ -89,7 +89,7 @@ LDFinputs.Q_lo_bound = -peak_single_load * 10
 # LDF.build_ldf!(model, LDFinputs)
 # optimize!(model)
 
-#= these voltages should be the same after changing Sbase, which they are. Now need to get them closer to 1.0 s.t. it is not worth buying battery inverter to incease load (for high voltage with lots of PV to reduce cost???)
+#= these voltages should be the same after changing Sbase, which they are.
 julia> maximum(sqrt.(value.(model[:vsqrd])))
 1.0043089018838498
 
