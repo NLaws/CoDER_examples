@@ -859,3 +859,22 @@ end
 # xbminus = value.(model[:xbminus]);
 # xbplus = value.(model[:xbplus]);
 # sum(xbminus.data - xbplus.data) ≈ 0
+
+
+#=
+# saving all variables
+
+allvar = all_variables(model);
+using JSON
+
+d = Dict{Symbol, Any}()
+
+for v in allvar
+    d[Symbol(v)] = value(v)       
+end
+
+open("results.json","w") do f
+    JSON.print(f, d, 2) 
+end
+
+=#
