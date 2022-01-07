@@ -415,7 +415,7 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
 
     @variables model begin
         Msml >= yi[LLnodes, 1:T] >= 0
-        Msml >= ye[LLnodes_withPV, 1:T] >= 0
+        Mbig >= ye[LLnodes_withPV, 1:T] >= 0
         Mbig >= ypv[LLnodes_withPV] >=0
         Mbig >= ypvprod[LLnodes_withPV, 1:T] >= 0
         T_hi >= ytemperature[LLnodes_warehouse, 1:T] >= T_lo
@@ -431,17 +431,17 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
 
         Mbig >= lambda[LLnodes_withPV, 1:T] >= -Mbig
         Mbig >= lambda_warehouse[LLnodes_warehouse, 1:T] >= -Mbig
-        Msml >= lambda_ss[LLnodes_warehouse, 2:T] >= -Msml
-        Msml >= lambda_initTemperature >= -Msml
-        Msml >= mu_i[LLnodes, 1:T] >= 0
+        Mbig >= lambda_ss[LLnodes_warehouse, 2:T] >= -Msml
+        Mbig >= lambda_initTemperature >= -Msml
+        Mbig >= mu_i[LLnodes, 1:T] >= 0
         Mbig >= mu_e[LLnodes_withPV, 1:T] >= 0
         Mbig >= mu_pv[LLnodes_withPV] >= 0
         Mbig >= mu_pvprod[LLnodes_withPV, 1:T] >= 0
         Mbig >= mu_dd[LLnodes_withPV, 1:T] >= 0
-        Msml >= mu_therm_lo[LLnodes_warehouse, 1:T] >= 0
-        Msml >= mu_therm_hi[LLnodes_warehouse, 1:T] >= 0
-        Msml >= mu_temperature_lo[LLnodes_warehouse, 1:T] >= 0
-        Msml >= mu_temperature_hi[LLnodes_warehouse, 1:T] >= 0
+        Mbig >= mu_therm_lo[LLnodes_warehouse, 1:T] >= 0
+        Mbig >= mu_therm_hi[LLnodes_warehouse, 1:T] >= 0
+        Mbig >= mu_temperature_lo[LLnodes_warehouse, 1:T] >= 0
+        Mbig >= mu_temperature_hi[LLnodes_warehouse, 1:T] >= 0
     end
 
     # UL does not allow simultaneous export/import
