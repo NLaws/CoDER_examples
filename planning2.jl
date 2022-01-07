@@ -601,7 +601,7 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
     );
 
     @objective(model, Min, 
-        pwf * sum(x0[t] * clmp[t] for t in 1:T)
+        5*pwf * sum(x0[t] * clmp[t] for t in 1:T)
         + sum(cbkW * xbkW[n] + cbkWh * xbkWh[n] for n in ULnodes_withBESS)
         + pwf * sum(
             ci[t] * yi[n,t] - lambda[n,t] * LDFinputs.Pload[n][t]
@@ -674,8 +674,8 @@ function upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS;
     return model
 end
 
-bkW = value.(model[:xbkW])
-bkWh = value.(model[:xbkWh])
-xbminus = value.(model[:xbminus]);
-xbplus = value.(model[:xbplus]);
+# bkW = value.(model[:xbkW])
+# bkWh = value.(model[:xbkWh])
+# xbminus = value.(model[:xbminus]);
+# xbplus = value.(model[:xbplus]);
 # sum(xbminus.data - xbplus.data) ≈ 0
