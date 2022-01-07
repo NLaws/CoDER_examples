@@ -445,11 +445,13 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
     end
 
     # UL does not allow simultaneous export/import
-    for n in LLnodes_withPV, t in 1:T
-        @constraint(model,
-            [ye[n,t], yi[n,t]] in MathOptInterface.SOS1([1.0, 2.0])
-        )
-    end
+    @variable(model, byeyi[LLnodes_withPV, t in 1:T], Bin);
+    @constraint(model, [n in LLnodes_withPV, t in 1:T],
+        ye[n,t] <= Mbig * byeyi[n,t]
+    );
+    @constraint(model, [n in LLnodes_withPV, t in 1:T],
+        yi[n,t] <= Mbig * (1-byeyi[n,t])
+    );
     
     # LinDistFlow (single phase, real power only)
     LDF.build_ldf!(model, LDFinputs, LLnodes, ye, yi, xbplus, xbminus);
