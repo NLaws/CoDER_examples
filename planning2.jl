@@ -97,6 +97,12 @@ julia> minimum(sqrt.(value.(model[:vsqrd])))
 0.9792230136873432
 =#
 
+
+"""
+    linearized_problem(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_warehouse, LDFinputs; 
+        T=8760)
+Used to compare against results from BilevelJuMP for validation
+"""
 function linearized_problem(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_warehouse, LDFinputs; 
     T=8760)
 
@@ -235,7 +241,13 @@ function linearized_problem(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_ware
 end
 
 
-function linearized_problem_bess(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_warehouse, LDFinputs, ULnodes_withBESS; 
+"""
+    linearized_problem_bess_sos(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_warehouse, LDFinputs, ULnodes_withBESS; 
+        T=8760)
+
+MILP with special order sets for complementary constraints and battery options in upper level.
+"""
+function linearized_problem_bess_sos(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_warehouse, LDFinputs, ULnodes_withBESS; 
     T=8760)
 
     R = 0.00025  # K/kW
@@ -405,6 +417,12 @@ function linearized_problem_bess(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes
 end
 
 
+"""
+    linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_warehouse, LDFinputs, ULnodes_withBESS; 
+        T=8760)
+
+MILP with bigM constraints for complementary constraints and battery options in upper level.
+"""
 function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_warehouse, LDFinputs, ULnodes_withBESS; 
     T=8760)
 
@@ -616,6 +634,12 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
 end
 
 
+"""
+    upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS; 
+        T=8760) 
+
+Upper level problem only, power flow with battery options.
+"""
 function upper_only_with_bess(clmp, LDFinputs, ULnodes_withBESS; 
     T=8760)
 
