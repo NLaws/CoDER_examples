@@ -24,11 +24,11 @@ discountrate = 0.05
 M = 10_000  # default bound for decision variables
 CHILLER_COP = 4.55
 #***********************#
-Sbase=1e3
+Sbase=1e3  # best to use Sbase of 1kW because thermal model assumes kW and kJ
 #***********************#
 pwf = REoptLite.annuity(years, 0.0, discountrate)
 clmp = vec(readdlm("./data/cleaned_ercot2019_RTprices.csv", ',', Float64, '\n'));
-clmp = abs.(clmp) / Sbase;  # problem is unbounded with negative prices, convert from $/MWh to $/kWh
+clmp = abs.(clmp) / 1e3;  # problem is unbounded with negative prices, convert from $/MWh to $/kWh
 tamb = REoptLite.get_ambient_temperature(lat, lon);
 prod_factor = REoptLite.get_pvwatts_prodfactor(lat, lon);  # TODO this function is only in flex branch
 LDFinputs = LDF.singlephase38linesInputs(Sbase=Sbase);  # TODO this method is not released yet
@@ -408,7 +408,7 @@ function linearized_problem_bess_bigM(cpv, ci, clmp, LLnodes, LLnodes_withPV, LL
     B = [1/(R*C) 1/C]
     u = [tamb zeros(8760)]';  # could replace the zeros vector with endogenous heat input
     J = size(B,2)
-    Mbig = peak_load * 100
+    Mbig = peak_load * 1000
     Msml = peak_single_load * 100
     T_hi = 0
     T_lo = -20
