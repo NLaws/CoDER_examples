@@ -33,7 +33,9 @@ tamb = REoptLite.get_ambient_temperature(lat, lon);
 prod_factor = REoptLite.get_pvwatts_prodfactor(lat, lon);  # TODO this function is only in flex branch
 LDFinputs = LDF.singlephase38linesInputs(Sbase=Sbase);  # TODO this method is not released yet
 loadnodes = collect(keys(LDFinputs.Pload))
-LLnodes_withPV = ["25"]
+# remove some loadnodes to make problem smaller and keep voltage further from lower limit
+loadnode = loadnodes[3:end-3]  # removes "32", "12", "25",  "18", "30", "3"
+LLnodes_withPV = ["22"]
 LLnodes_warehouse = ["33"]
 LLnodes = union(LLnodes_withPV, LLnodes_warehouse)  # all nodes in LL model (that have decisions)
 
@@ -47,29 +49,25 @@ doe_profiles = Dict{String, Vector{Float64}}()
 for name in profile_names
     doe_profiles[name] = REoptLite.BuiltInElectricLoad("", name, lat, lon, 2017)
 end
-
+rand_names = rand(profile_names, length(loadnodes))
 
 # fill in net uncontrolled loads
-T = 8760
 LDFinputs.Ntimesteps = T
-ci = repeat([0.25], T)
-rand_names = rand(profile_names, length(loadnodes))
+load_scaler = 0.7
 for (i, node) in enumerate(loadnodes)
-    LDFinputs.Pload[node] = doe_profiles[rand_names[i]][1:T] / Sbase;
-    LDFinputs.Qload[node] = doe_profiles[rand_names[i]][1:T] / Sbase * 0.1;
+    LDFinputs.Pload[node] = load_scaler * doe_profiles[rand_names[i]][1:T] / Sbase;
+    LDFinputs.Qload[node] = load_scaler * doe_profiles[rand_names[i]][1:T] / Sbase * 0.1;
 end
 # pepper some pv into the system
-PVkW = 2e3   # TODO more baseline PV ?
-LDFinputs.Pload["3"] .-= PVkW * prod_factor[1:T] / Sbase;
-LDFinputs.Qload["3"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
-LDFinputs.Pload["30"] .-= PVkW * prod_factor[1:T] / Sbase;
-LDFinputs.Qload["30"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
+PVkW = 1e3   # TODO more baseline PV ?
+LDFinputs.Pload["5"] .-= PVkW * prod_factor[1:T] / Sbase;
+LDFinputs.Qload["5"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
+LDFinputs.Pload["31"] .-= PVkW * prod_factor[1:T] / Sbase;
+LDFinputs.Qload["31"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
 LDFinputs.Pload["28"] .-= PVkW * prod_factor[1:T] / Sbase;
 LDFinputs.Qload["28"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
 LDFinputs.Pload["27"] .-= PVkW * prod_factor[1:T] / Sbase;
 LDFinputs.Qload["27"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
-LDFinputs.Pload["18"] .-= PVkW * prod_factor[1:T] / Sbase;
-LDFinputs.Qload["18"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
 
 LDFinputs.v_lolim = 0.0
 
@@ -85,8 +83,13 @@ LDFinputs.Q_lo_bound = -peak_single_load * 10
 # LDF.build_ldf!(model, LDFinputs)
 # optimize!(model)
 
+#= these voltages should be the same after changing Sbase, which they are. Now need to get them closer to 1.0 s.t. it is not worth buying battery inverter to incease load (for high voltage with lots of PV to reduce cost???)
+julia> maximum(sqrt.(value.(model[:vsqrd])))
+1.0043089018838498
 
-# compare to BilevelJuMP result with T = 2, 10?
+julia> minimum(sqrt.(value.(model[:vsqrd])))
+0.9792230136873432
+=#
 
 function linearized_problem(cpv, ci, clmp, LLnodes, LLnodes_withPV, LLnodes_warehouse, LDFinputs; 
     T=8760)
