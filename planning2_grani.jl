@@ -987,7 +987,7 @@ function linearized_problem_bess_bigM_bilinear(cpv, ci, clmp, LLnodes, LLnodes_w
         5*pwf * sum(x0[t] * clmp[t] for t in 1:T)
         + sum(cbkW * xbkW[n] + cbkWh * xbkWh[n] for n in ULnodes_withBESS)
         + pwf * sum(
-            xe[n,t] * ye[n,t]
+            lambda[n,t] * ye[n,t]
             for n in LLnodes_withPV, t in 1:T
         )
     );
