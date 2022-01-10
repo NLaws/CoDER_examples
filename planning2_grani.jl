@@ -47,8 +47,8 @@ loadnodes = collect(keys(LDFinputs.Pload))
 #     delete!(LDFinputs.Pload, n)
 #     delete!(LDFinputs.Qload, n)
 # end
-LLnodes_withPV = ["9", "22", "31", "34", "17"]  # TODO more PV options in LL, can add any of the loadnodes
-LLnodes_warehouse = ["5", "10", "15"]  # TODO more warehouse options in LL (price responsive refrigeration), can add any of the loadnodes
+LLnodes_withPV = ["9", "22", "31", "34", "17"]
+LLnodes_warehouse = ["5", "10", "15"]  # (price responsive refrigeration), can add any of the loadnodes
 LLnodes = union(LLnodes_withPV, LLnodes_warehouse)  # all nodes in LL model (that have decisions)
 
 ULnodes_withBESS = ["2", "7", "24"]
