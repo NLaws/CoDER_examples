@@ -28,7 +28,7 @@ function bileveljump_bess_bigM(optimizer, T, LDFinputs, bigM, smlM;
         bigM >= ypvprod[LLnodes_withPV, 1:T] >= 0
         bigM >= spvprod[LLnodes_withPV, 1:T] >= 0
         T_hi >= ytemperature[LLnodes_warehouse, 1:T] >= T_lo
-        smlM >= ytherm[LLnodes_warehouse, 1:T] >= 0
+        smlM >= ytherm[LLnodes_warehouse, 1:T] >= 0 # should be limited by HVAC capacity
     end
     @variables Upper(model) begin
         bigM >= xe[LLnodes_withPV, 1:T] >= 0        
