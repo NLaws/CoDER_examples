@@ -21,7 +21,7 @@ julia> minimum(sqrt.(value.(model[:vsqrd])))
 
 model_linearized = linearized_problem_bess_bigM(Gurobi.Optimizer, T, LDFinputs, bigM, smlM);
 
-model_bileveljump = bileveljump_bess_bigM(Gurobi.Optimizer, T, LDFinputs, bigM);
+model_bileveljump = bileveljump_bess_bigM(Gurobi.Optimizer, T, LDFinputs, bigM, smlM);
 
 @test objective_value(model_linearized) ≈ objective_value(model_bileveljump)
 

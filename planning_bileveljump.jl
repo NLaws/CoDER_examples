@@ -11,7 +11,7 @@ The planning example assumes that:
 =#
 
 
-function bileveljump_bess_bigM(optimizer, T, LDFinputs, bigM; 
+function bileveljump_bess_bigM(optimizer, T, LDFinputs, bigM, smlM; 
     setgap=false, MIPGap=1e-2)
 
     model = BilevelModel(()->optimizer(), linearize_bilinear_upper_terms=true,
@@ -22,13 +22,13 @@ function bileveljump_bess_bigM(optimizer, T, LDFinputs, bigM;
     end
 
     @variables Lower(model) begin
-        bigM >= yi[LLnodes, 1:T] >= 0
+        smlM >= yi[LLnodes, 1:T] >= 0
         bigM >= ye[LLnodes_withPV, 1:T] >= 0
         bigM >= ypv[LLnodes_withPV] >=0
         bigM >= ypvprod[LLnodes_withPV, 1:T] >= 0
         bigM >= spvprod[LLnodes_withPV, 1:T] >= 0
         T_hi >= ytemperature[LLnodes_warehouse, 1:T] >= T_lo
-        ytherm[LLnodes_warehouse, 1:T] >= 0
+        smlM >= ytherm[LLnodes_warehouse, 1:T] >= 0
     end
     @variables Upper(model) begin
         bigM >= xe[LLnodes_withPV, 1:T] >= 0        
