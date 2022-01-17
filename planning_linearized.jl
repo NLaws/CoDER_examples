@@ -19,7 +19,7 @@ function linearized_problem_bess_bigM(optimizer, T, LDFinputs, bigM, smlM)
         bigM >= ypv[LLnodes_withPV] >=0
         bigM >= ypvprod[LLnodes_withPV, 1:T] >= 0
         T_hi >= ytemperature[LLnodes_warehouse, 1:T] >= T_lo
-        smlM >= ytherm[LLnodes_warehouse, 1:T] >= 0
+        smlM >= ytherm[LLnodes_warehouse, 1:T] >= 0 # should be limited by HVAC capacity
 
         bigM >= xe[LLnodes_withPV, 1:T] >= 0        
         bigM >= xi[LLnodes_warehouse, 1:T] >= 0
