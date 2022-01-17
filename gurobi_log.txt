@@ -405,15 +405,6 @@ And data, a 3-element Vector{Float64}:
 
 PWF 4, 3, 2, 1
 
-nlaws-> ssh guest@10.157.22.245
-guest@10.157.22.245's password: 
-Last login: Sat Jan  8 09:32:10 2022 from dyn-205-179.vpn.utexas.edu
-guest@ME-D02365:~[guest@ME-D02365 ~]$ cd Nick/CoDER_examples/
-guest@ME-D02365:~/Nick/CoDER_examples[guest@ME-D02365 CoDER_examples]$ ls
-data                   gurobi_log.txt  Manifest.toml       planning2.jl  Project.toml  results.json
-extend_lindistflow.jl  LICENSE         planning2_grani.jl  planning.jl   README.md
-guest@ME-D02365:~/Nick/CoDER_examples[guest@ME-D02365 CoDER_examples]$ vim planning2_grani.jl 
-guest@ME-D02365:~/Nick/CoDER_examples[guest@ME-D02365 CoDER_examples]$ julia --project=.
                _
    _       _ _(_)_     |  Documentation: https://docs.julialang.org
   (_)     | (_) (_)    |
