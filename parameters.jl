@@ -84,8 +84,8 @@ function get_LDFinputs(T; v_lolim=0.95)
     peak_single_load = maximum(maximum(values(LDFinputs.Pload)))
     LDFinputs.P_up_bound =  peak_load * 100
     LDFinputs.Q_up_bound =  peak_load * 10
-    LDFinputs.P_lo_bound = -peak_single_load * 100
-    LDFinputs.Q_lo_bound = -peak_single_load * 10
+    LDFinputs.P_lo_bound = -peak_single_load * 1e3
+    LDFinputs.Q_lo_bound = -peak_single_load * 1e2
 
     bigM = peak_load * 1e4
     smlM = peak_single_load * 1e3
