@@ -21,134 +21,108 @@ include("extend_lindistflow.jl")
 global_logger(ConsoleLogger(stderr, Logging.Debug))
 const MOI = MathOptInterface
 
-#= 
-TODO can reduce memory usage in BilevelJuMP.jl#bilinear ??? (memory pressure on 8GB laptop, moved to 32 GB)
-maybe can get linearization from BilevelJuMP, then build single level model?
-"V" in BilevelJuMP has columns and rows for UL too, which is massive with the LDF model,
-    and now have the blocks loop :/
-=#
-#=
-        PARAMETERS
-=#
 
-# scalars
-T = 24 # time horizon
 lat, lon = 30.2672, -97.7431  # Austin, TX
-cpv = 1500
-cbkW = 700
-cbkWh = 350
 η = 0.95
-years = 10
+years = 20
 discountrate = 0.05
 M = 10_000  # default bound for decision variables
 CHILLER_COP = 4.55
+#***********************#
+Sbase=1e3  # best to use Sbase of 1kW because thermal model assumes kW and kJ
+#***********************#
 
-# arrays
-LDFinputs = LDF.singlephase38linesInputs(Sbase=1);  # TODO this method is not released yet
-# NOTE Sbase is 1, using absolute power units in model, kW to align with DoE profiles
-loadnodes = collect(keys(LDFinputs.Pload))
-# NOTE LDF using strings for node keys to allow for arbitrary names (should make them symbols)
-
-# relax voltage limits while setting up scenario
-# LDFinputs.v_uplim = 1.2
-# LDFinputs.v_lolim = 0.8
-# TODO current (squared) limits?
-
-
-LLnodes = ["33", "34"]  # all nodes in LL model (that have decisions)
-
-# TODO implement constraints/variables for varying nodes with PV and BESS
-LLnodes_withPV = ["34"]
-LLnodes_warehouse = ["33"]
-
-
-ci = repeat([0.25], T)
+#   cost components
 pwf = REoptLite.annuity(years, 0.0, discountrate)
+T = 48
+
 clmp = vec(readdlm("./data/cleaned_ercot2019_RTprices.csv", ',', Float64, '\n'));
 clmp = abs.(clmp) / 1e3;  # problem is unbounded with negative prices, convert from $/MWh to $/kWh
+cpv = 1400
+cbkW = 700
+cbkWh = 350
+ci = repeat([0.25], T);
+
+# outdoor temperature and PV production factor
 tamb = REoptLite.get_ambient_temperature(lat, lon);
+prod_factor = REoptLite.get_pvwatts_prodfactor(lat, lon);
 
-pvpf = REoptLite.get_pvwatts_prodfactor(lat, lon);  # TODO this function is only in flex branch
+# power flow inputs
+LDFinputs = LDF.singlephase38linesInputs(Sbase=Sbase);
+loadnodes = collect(keys(LDFinputs.Pload))
+# remove some loadnodes to make problem smaller and keep voltage further from lower limit
+# loadnodes = loadnodes[3:end-3]  # removes "32", "12", "25",  "18", "30", "3"
+# for n in ["32", "12", "25",  "18", "30", "3"]
+#     delete!(LDFinputs.Pload, n)
+#     delete!(LDFinputs.Qload, n)
+# end
+LLnodes_withPV = ["9", "22", "31", "34", "17"]
+LLnodes_warehouse = ["5", "10", "15"]  # (price responsive refrigeration), can add any of the loadnodes
+LLnodes = union(LLnodes_withPV, LLnodes_warehouse)  # all nodes in LL model (that have decisions)
 
+ULnodes_withBESS = ["2", "7", "24"]
 
-
-# fill in loads, all nodes have some uncontrolled load, defined using DoE Commercial Reference Buildings
-profile_names = ["FastFoodRest", "FullServiceRest", "Hospital", "LargeHotel", "LargeOffice", "MediumOffice", "MidriseApartment", "Outpatient", "PrimarySchool", "RetailStore", "SecondarySchool", "SmallHotel", "SmallOffice", "StripMall", "Supermarket", "Warehouse"]
-
-#= 
-    Define known loads, 
-    - nodes w/o DER are set in the LDF model using build_ldf! 
-    - nodes w/DER use the known load in the LL model load balance constraint
-    - in the LDF model, nodes w/DER have decision variables yi and ye (which are complementary)
-
-=#
-# knownloads_nodestrings = setdiff(loadnodestrings, LLnodes)
-rand_names = rand(profile_names, length(loadnodes))
-doe_profiles = Any[]
-for (i, node) in enumerate(loadnodes)
-    push!(doe_profiles, REoptLite.BuiltInElectricLoad("", rand_names[i], lat, lon, 2017))
+profile_names = ["FastFoodRest", "FullServiceRest", "Hospital", "LargeHotel", "LargeOffice", 
+"MediumOffice", "MidriseApartment", "Outpatient", "PrimarySchool", "RetailStore", "SecondarySchool", 
+"SmallHotel", "SmallOffice", "StripMall", "Supermarket", "Warehouse"]
+doe_profiles = Dict{String, Vector{Float64}}()
+for name in profile_names
+    doe_profiles[name] = REoptLite.BuiltInElectricLoad("", name, Real(lat), Real(lon), 2017, nothing, Real[])  
 end
+# TODO address type issues in REoptLite
+rand_names = rand(profile_names, length(loadnodes))
 
-# # check power flow feasibility w/o DER
+# fill in net uncontrolled loads
+LDFinputs.Ntimesteps = T
+load_scaler = 0.7
+for (i, node) in enumerate(loadnodes)
+    LDFinputs.Pload[node] = load_scaler * doe_profiles[rand_names[i]][1:T] / Sbase;
+    LDFinputs.Qload[node] = load_scaler * doe_profiles[rand_names[i]][1:T] / Sbase * 0.1;
+end
+# pepper some pv into the system
+PVkW = 1e3   # TODO more baseline PV ?
+LDFinputs.Pload["5"] .-= PVkW * prod_factor[1:T] / Sbase;
+LDFinputs.Qload["5"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
+LDFinputs.Pload["31"] .-= PVkW * prod_factor[1:T] / Sbase;
+LDFinputs.Qload["31"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
+LDFinputs.Pload["28"] .-= PVkW * prod_factor[1:T] / Sbase;
+LDFinputs.Qload["28"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
+LDFinputs.Pload["27"] .-= PVkW * prod_factor[1:T] / Sbase;
+LDFinputs.Qload["27"] .-= PVkW * prod_factor[1:T] / Sbase * 0.1;
+
+LDFinputs.v_lolim = 0.0
+
+peak_load = maximum(sum(values(LDFinputs.Pload)))
+peak_single_load = maximum(maximum(values(LDFinputs.Pload)))
+LDFinputs.P_up_bound =  peak_load * 100
+LDFinputs.Q_up_bound =  peak_load * 10
+LDFinputs.P_lo_bound = -peak_single_load * 100
+LDFinputs.Q_lo_bound = -peak_single_load * 10
+
+## check UL power flow feasibility
 # model = Model(Gurobi.Optimizer)
 # LDF.build_ldf!(model, LDFinputs)
 # optimize!(model)
 
-# minimum(sqrt.(value.(model[:vsqrd])))
+#= these voltages should be the same after changing Sbase, which they are.
+julia> maximum(sqrt.(value.(model[:vsqrd])))
+1.008374586764746
 
-pvpf_complement = map(x -> x ≈ 0.0 ? M*M : 0.0, pvpf)
-timesteps_pv_complement = Int[]
-for (i,pf) in enumerate(pvpf)
-    if pf <= 0
-        push!(timesteps_pv_complement, i)
-    end
-end
-
-
-# # check power flow feasibility w/baseline PV
-model = Model(Gurobi.Optimizer)
-LDF.build_ldf!(model, LDFinputs)
-optimize!(model)
-
-# maximum(sqrt.(value.(model[:vsqrd])))
-
-
-
-T = 2
-LDFinputs.Ntimesteps =T
-cpv = 1500
-ci = repeat([15], T);
-timesteps_pv = timesteps_pv_complement[findall(t -> t <= T, timesteps_pv_complement)];
-
-for (i, node) in enumerate(loadnodes)
-    LDFinputs.Pload[node] = doe_profiles[i][1:T];
-    LDFinputs.Qload[node] = doe_profiles[i][1:T] * 0.1;
-end
-# pepper some pv into the system
-PVkW = 2e3   # TODO more baseline PV ?
-LDFinputs.Pload["3"] .-= PVkW * pvpf[1:T];
-LDFinputs.Qload["3"] .-= PVkW * pvpf[1:T] * 0.1;
-LDFinputs.Pload["30"] .-= PVkW * pvpf[1:T];
-LDFinputs.Qload["30"] .-= PVkW * pvpf[1:T] * 0.1;
-LDFinputs.Pload["28"] .-= PVkW * pvpf[1:T];
-LDFinputs.Qload["28"] .-= PVkW * pvpf[1:T] * 0.1;
-LDFinputs.Pload["27"] .-= PVkW * pvpf[1:T];
-LDFinputs.Qload["27"] .-= PVkW * pvpf[1:T] * 0.1;
-LDFinputs.Pload["18"] .-= PVkW * pvpf[1:T];
-LDFinputs.Qload["18"] .-= PVkW * pvpf[1:T] * 0.1;
+julia> minimum(sqrt.(value.(model[:vsqrd])))
+0.9845817662226841
+=#
 
 optimizer = Gurobi.Optimizer()
 model = BilevelModel(()->optimizer, linearize_bilinear_upper_terms=true)
 #= 
         LOWER MODEL VARIABLES
 =#
-# TODO add more node indices to LL
-@variable(Lower(model), 0 <= ye[LLnodes_withPV, 1:T] <= M); # TODO? start values from REopt
+@variable(Lower(model), 0 <= ye[LLnodes_withPV, 1:T] <= M);
 @variable(Lower(model), 0 <= yi[LLnodes, 1:T] <= M);
 @variable(Lower(model), 0 <= ypv[LLnodes_withPV] <= M);
 @variable(Lower(model), 0 <= ypvprod[LLnodes_withPV, 1:T] <= M);
 @variable(Lower(model), 0 <= spvprod[LLnodes_withPV, 1:T] <= M);
-@variable(Lower(model), 0 <= dummyslack[LLnodes_withPV, 1:T] <= M);
+
 @variable(Lower(model), -10 <= dvTemperature[LLnodes_warehouse, 1:T] <= 0.0);
 @variable(Lower(model), 0 <= dvThermalProduction[LLnodes_warehouse, 1:T] <= M);
 # LL load balances
@@ -160,11 +134,9 @@ model = BilevelModel(()->optimizer, linearize_bilinear_upper_terms=true)
 );
 # PV production
 @constraint(Lower(model), pvprod[n in LLnodes_withPV, t in 1:T],
-    ypvprod[n, t] + spvprod[n, t] == ypv[n] * pvpf[t]  # need curtailment to make UL pay for ye ?
+    ypvprod[n, t] + spvprod[n, t] == ypv[n] * prod_factor[t]  # need curtailment to make UL pay for ye ?
 );
-# @constraint(Lower(model), [n in LLnodes_withPV, t in timesteps_pv],
-#     ypvprod[n, t] + dummyslack[n, t] == ypv[n] * pvpf_complement[t]
-# )
+
 #=
         LL REFRIGERATED WAREHOUSE MODEL
 =#
@@ -186,11 +158,11 @@ J = size(B,2)
 =#
 # duals of LL load balances
 @variable(Upper(model), 0 <= lambdaPV <= M, DualOf(loadbalance_withPV));
-# @variable(Upper(model), 0 <= lambda_warehouse <= M, DualOf(loadbalance_warehouse))
+@variable(Upper(model), 0 <= lambda_warehouse <= M, DualOf(loadbalance_warehouse))
 
 # UL variables in LL objective
 @variable(Upper(model), 0 <= xe[LLnodes_withPV, 1:T] <= M);  # PV export compensation
-# @variable(Upper(model), 0 <= xi[LLnodes, 1:T] <= M)  # time varying tariff for Warehouses
+@variable(Upper(model), 0 <= xi[LLnodes, 1:T] <= M)  # time varying tariff for Warehouses
 
 @variable(Upper(model), 0 <= x0[1:T] <= M);  # positive power import at feeder head
 
@@ -210,18 +182,18 @@ end
 @objective(Lower(model), Min,
     pwf * sum(ci[t] * yi[n, t] for n in LLnodes, t in 1:T) + 
     pwf * sum( -xe[n, t] * ye[n, t] for n in LLnodes_withPV, t in 1:T) +
-    # pwf * sum(  xi[n, t] * yi[n, t] for n in LLnodes_warehouse, t in 1:T) +
+    pwf * sum(  xi[n, t] * yi[n, t] for n in LLnodes_warehouse, t in 1:T) +
     sum(cpv * ypv[n] for n in LLnodes_withPV)
 );
 #= 
         UL objective
 =#
-# TODO voltage cost? wires alternative? 
-# TODO UL BESS cost (w/o it pwf has no effect)
+
+
 @objective(Upper(model), Min,
     pwf * sum( clmp[t] * x0[t] for t in 1:T) +
-    pwf * sum( ye[n, t] * lambdaPV[n, t] for n in LLnodes_withPV, t in 1:T) 
-    # pwf * sum( yi[n, t] * lambda_warehouse[n, t] for n in LLnodes_warehouse, t in 1:T)
+    pwf * sum( ye[n, t] * lambdaPV[n, t] for n in LLnodes_withPV, t in 1:T) +
+    pwf * sum( yi[n, t] * lambda_warehouse[n, t] for n in LLnodes_warehouse, t in 1:T)
     # UL should not benefit from charging LL w/o some cost
 );
 
@@ -329,7 +301,7 @@ model = BilevelModel(()->optimizer, linearize_bilinear_upper_terms=true)
 @variable(Lower(model), 0 <= dvThermalProduction[LLnodes, 1:T] <= M)
 # LL load balances
 @constraint(Lower(model), loadbalance[n in LLnodes, t in 1:T],
-    yi[n, t] + ypv[n] * pvpf[t] == LDFinputs.Pload[n][t] + dvThermalProduction[n, t] / CHILLER_COP + ye[n, t]
+    yi[n, t] + ypv[n] * prod_factor[t] == LDFinputs.Pload[n][t] + dvThermalProduction[n, t] / CHILLER_COP + ye[n, t]
 )
 #=
         LL REFRIGERATED WAREHOUSE MODEL
@@ -443,7 +415,7 @@ optimize!(model)
     )
 
     @constraint(Lower(model), [n in nodes, t in 1:T],
-        ypvprod[n,t] + spvprod[n,t] == ypv[n] * pvpf[t]
+        ypvprod[n,t] + spvprod[n,t] == ypv[n] * prod_factor[t]
     )
     @constraint(Lower(model), [n in nodes, t in 1:T],
         ypvprod[n,t] + dummyslack[n,t] == ypv[n]
@@ -521,7 +493,7 @@ NOTE does not work with "add" !
     )
 
     @constraint(Lower(quadmodel), [n in nodes, t in 1:T],
-        ypvprod[n,t] + spvprod[n,t] == ypv[n] * pvpf[t]
+        ypvprod[n,t] + spvprod[n,t] == ypv[n] * prod_factor[t]
     )
     @constraint(Lower(quadmodel), [n in nodes, t in 1:T],
         ypvprod[n,t] + dummyslack[n,t] == ypv[n]
