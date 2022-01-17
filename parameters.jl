@@ -88,6 +88,7 @@ function get_LDFinputs(T; v_lolim=0.95)
     LDFinputs.Q_lo_bound = -peak_single_load * 10
 
     bigM = peak_load * 1e4
+    smlM = peak_single_load * 1e3
 
-    return LDFinputs, bigM
+    return LDFinputs, bigM, smlM
 end

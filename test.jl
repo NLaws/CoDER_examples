@@ -3,7 +3,7 @@ using Test
 using Gurobi
 
 T = 24
-LDFinputs, bigM = get_LDFinputs(T; v_lolim=0.0);
+LDFinputs, bigM, smlM = get_LDFinputs(T; v_lolim=0.0);
 
 
 ## check UL power flow feasibility
@@ -19,7 +19,7 @@ julia> minimum(sqrt.(value.(model[:vsqrd])))
 0.9845817662226841
 =#
 
-model_linearized = linearized_problem_bess_bigM(Gurobi.Optimizer, T, LDFinputs, bigM);
+model_linearized = linearized_problem_bess_bigM(Gurobi.Optimizer, T, LDFinputs, bigM, smlM);
 
 model_bileveljump = bileveljump_bess_bigM(Gurobi.Optimizer, T, LDFinputs, bigM);
 

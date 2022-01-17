@@ -8,18 +8,18 @@
 
 MILP with bigM constraints for complementary constraints and battery options in upper level.
 """
-function linearized_problem_bess_bigM(optimizer, T, LDFinputs, bigM)
+function linearized_problem_bess_bigM(optimizer, T, LDFinputs, bigM, smlM)
 
     model = JuMP.Model(optimizer)
-    set_optimizer_attribute(model, "MIPGap", 1e-2)
+    set_optimizer_attribute(model, "MIPGap", 5e-2)
 
     @variables model begin
-        bigM >= yi[LLnodes, 1:T] >= 0
+        smlM >= yi[LLnodes, 1:T] >= 0
         bigM >= ye[LLnodes_withPV, 1:T] >= 0
         bigM >= ypv[LLnodes_withPV] >=0
         bigM >= ypvprod[LLnodes_withPV, 1:T] >= 0
         T_hi >= ytemperature[LLnodes_warehouse, 1:T] >= T_lo
-        bigM >= ytherm[LLnodes_warehouse, 1:T] >= 0
+        smlM >= ytherm[LLnodes_warehouse, 1:T] >= 0
 
         bigM >= xe[LLnodes_withPV, 1:T] >= 0        
         bigM >= xi[LLnodes_warehouse, 1:T] >= 0
@@ -32,17 +32,17 @@ function linearized_problem_bess_bigM(optimizer, T, LDFinputs, bigM)
 
         bigM >= lambda[LLnodes_withPV, 1:T] >= -bigM
         bigM >= lambda_warehouse[LLnodes_warehouse, 1:T] >= -bigM
-        bigM >= lambda_ss[LLnodes_warehouse, 2:T] >= -bigM
-        bigM >= lambda_initTemperature >= -bigM
-        bigM >= mu_i[LLnodes, 1:T] >= 0
+        bigM >= lambda_ss[LLnodes_warehouse, 2:T] >= -smlM
+        bigM >= lambda_initTemperature >= -smlM
+        smlM >= mu_i[LLnodes, 1:T] >= 0
         bigM >= mu_e[LLnodes_withPV, 1:T] >= 0
         bigM >= mu_pv[LLnodes_withPV] >= 0
         bigM >= mu_pvprod[LLnodes_withPV, 1:T] >= 0
         bigM >= mu_dd[LLnodes_withPV, 1:T] >= 0
-        bigM >= mu_therm_lo[LLnodes_warehouse, 1:T] >= 0
-        bigM >= mu_therm_hi[LLnodes_warehouse, 1:T] >= 0
-        bigM >= mu_temperature_lo[LLnodes_warehouse, 1:T] >= 0
-        bigM >= mu_temperature_hi[LLnodes_warehouse, 1:T] >= 0
+        smlM >= mu_therm_lo[LLnodes_warehouse, 1:T] >= 0
+        smlM >= mu_therm_hi[LLnodes_warehouse, 1:T] >= 0
+        smlM >= mu_temperature_lo[LLnodes_warehouse, 1:T] >= 0
+        smlM >= mu_temperature_hi[LLnodes_warehouse, 1:T] >= 0
     end
 
     # UL does not allow simultaneous export/import
@@ -75,38 +75,38 @@ function linearized_problem_bess_bigM(optimizer, T, LDFinputs, bigM)
     );
     @variable(model, byi[n in LLnodes, t in 1:T], Bin);
     @constraint(model, [n in LLnodes, t in 1:T], 
-        yi[n,t] <= bigM * byi[n,t]
+        yi[n,t] <= smlM * byi[n,t]
     );
     @constraint(model, [n in LLnodes, t in 1:T], 
-        mu_i[n,t] <= bigM * (1 - byi[n,t])
+        mu_i[n,t] <= smlM * (1 - byi[n,t])
     );
     @variable(model, bytherm_lo[n in LLnodes_warehouse, t in 1:T], Bin);
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
         ytherm[n,t] <= bigM * bytherm_lo[n,t]
     );
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
-        mu_therm_lo[n,t] <= bigM * (1-bytherm_lo[n,t])
+        mu_therm_lo[n,t] <= smlM * (1-bytherm_lo[n,t])
     );
     @variable(model, bytherm_hi[n in LLnodes_warehouse, t in 1:T], Bin);
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
-        ytherm[n,t] - bigM <= bigM * bytherm_hi[n,t]
+        ytherm[n,t] - smlM <= bigM * bytherm_hi[n,t]
     );
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
-        mu_therm_hi[n,t] <=  bigM * (1 - bytherm_hi[n,t])
+        mu_therm_hi[n,t] <=  smlM * (1 - bytherm_hi[n,t])
     );
     @variable(model, bytemperature_lo[n in LLnodes_warehouse, t in 1:T], Bin);
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
-        T_lo - ytemperature[n,t] <= bigM * bytemperature_lo[n,t]
+        T_lo - ytemperature[n,t] <= smlM * bytemperature_lo[n,t]
     );
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
-        mu_temperature_lo[n,t] <= bigM * (1 - bytemperature_lo[n,t])
+        mu_temperature_lo[n,t] <= smlM * (1 - bytemperature_lo[n,t])
     );
     @variable(model, bytemperature_hi[n in LLnodes_warehouse, t in 1:T], Bin);
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
-        ytemperature[n,t] - T_hi <= bigM * bytemperature_hi[n,t]
+        ytemperature[n,t] - T_hi <= smlM * bytemperature_hi[n,t]
     );
     @constraint(model, [n in LLnodes_warehouse, t in 1:T], 
-        mu_temperature_hi[n,t] <= bigM * (1 - bytemperature_hi[n,t])
+        mu_temperature_hi[n,t] <= smlM * (1 - bytemperature_hi[n,t])
     );
     @variable(model, bypvprod[n in LLnodes_withPV, t in 1:T], Bin)
     @constraint(model, [n in LLnodes_withPV, t in 1:T], 
