@@ -25,3 +25,14 @@ model_bileveljump = bileveljump_bess_bigM(Gurobi.Optimizer, T, LDFinputs, bigM, 
 
 @test objective_value(model_linearized) ≈ objective_value(model_bileveljump)
 
+
+T = 8760
+LDFinputs, bigM, smlM = get_LDFinputs(T; v_lolim=0.0);
+
+model_linearized = linearized_problem_bess_bigM(Gurobi.Optimizer, T, LDFinputs, bigM, smlM);
+
+ # TODO bileveljump_bess_bigM is taking too much time to build problem due to loops over variables and constraints (including before linearization process, while making complementary constraints in BilevelJuMP.jl)
+
+ model_bileveljump = bileveljump_bess_bigM(Gurobi.Optimizer, T, LDFinputs, bigM, smlM);
+
+ @test objective_value(model_linearized) ≈ objective_value(model_bileveljump)
